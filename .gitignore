@@ -1,0 +1,5 @@
+.idea/
+d.txt
+*.pyc
+db.sqlite3
+credentials.py
