@@ -392,7 +392,7 @@ def make_announcement(message):
         tasks.append(message.author.send(
                 embed=discord.Embed(title="Your original announcement", description=message.content)))
     elif any(kw in message.content[:15].lower() for kw in
-             ('hi', 'hello', 'yo', 'sup', "what's up", "dear all", 'all', 'yall')):
+             ('hi', 'hello', 'sup', "what's up", "dear all", 'all', 'yall')):
         tasks.append(message.channel.delete_messages((message,)))
         tasks.append(message.author.send(
                 "I have deleted your announcement because you added a greeting word at the beginning of the announcement. Remember, I will add appropriate greetings to each announcement."))
