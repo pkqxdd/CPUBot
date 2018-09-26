@@ -13,6 +13,8 @@ class Record(models.Model):
     token_type=models.CharField("Token type",max_length=20,blank=True,null=True)
     expires_at=models.DateTimeField("Expires at",null=True,blank=True)
     join_success=models.BooleanField("Successfully joined the server",default=False)
+    opt_out_email=models.BooleanField("Opted out email",default=False)
+    opt_out_pm=models.BooleanField("Opted out discord private message",default=False)
     
     def save(self,*args,**kwargs):
         if not self.pk:  # on creation
