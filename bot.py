@@ -230,9 +230,11 @@ class UserInterface(BaseInterface):
                     return self.unrecognized_command(command[1]),
             else:
                 return self.unrecognized_command(command[0]),
+        except IndexError:
+            raise
         except:
             await on_error('preference change')
-            return 'An error has occurred',
+            return 'An error has occured',
     
     opt.usage='opt (in|out) (email|pm)'
     opt.description='Change your preference of whether you want to receive notification by a specific method.'
