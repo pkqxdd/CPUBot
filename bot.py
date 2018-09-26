@@ -125,7 +125,7 @@ class BaseInterface(metaclass=InterfaceMeta):
             except AttributeError:
                 return await split_send_message(message.author, self.error_reply)
             except IndexError:
-                return await split_send_message(message.author, 'Insufficient arguments.\n' + self.error_reply)
+                return await split_send_message(message.author, 'Insufficient arguments.\n' + self.usage)
         else:
             return []
     
