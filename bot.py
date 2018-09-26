@@ -202,7 +202,40 @@ class UserInterface(BaseInterface):
             
     feedback.usage='feedback'
     feedback.description='Send a feedback to the admin team anonymously.'
-
+    
+    async def opt(self, command: list, message: discord.Message) -> tuple:
+        try:
+            discord_username='{}#{}'.format(message.author.name,message.author.discriminator)
+            if command[0]=='out':
+                if command[1]=='email':
+                    cursor.execute("UPDATE oauth_record SET opt_out_email=1 WHERE discord_username='?'",(discord_username))
+                    conn.commit()
+                    return "You have successfully opted out of our email",
+                elif command[1]=='pm':
+                    cursor.execute("UPDATE oauth_record SET opt_out_pm=1 WHERE discord_username='?'",(discord_username))
+                    conn.commit()
+                    return "You have successfully opted out of our private message",
+                else:
+                    return self.unrecognized_command(command[1]),
+            elif command[1]=='in':
+                if command[1]=='email':
+                    cursor.execute("UPDATE oauth_record SET opt_out_email=0 WHERE discord_username='?'",(discord_username))
+                    conn.commit()
+                    return "You have successfully opted in our email",
+                elif command[1]=='pm':
+                    cursor.execute("UPDATE oauth_record SET opt_out_pm=0 WHERE discord_username='?'",(discord_username))
+                    conn.commit()
+                    return "You have successfully opted in our private message",
+                else:
+                    return self.unrecognized_command(command[1]),
+            else:
+                return self.unrecognized_command(command[0]),
+        except:
+            await on_error('preference change')
+            return 'An error has occurred',
+    
+    opt.usage='opt (in|out) (email|pm)'
+    opt.description='Change your preference of whether you want to receive notification by a specific method.'
 
 class AdminInterface(UserInterface):
     
