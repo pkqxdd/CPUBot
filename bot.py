@@ -211,7 +211,7 @@ class UserInterface(BaseInterface):
                     cursor.execute("UPDATE oauth_record SET opt_out_email=1 WHERE discord_username=?",(discord_username,))
                     conn.commit()
                     return "You have successfully opted out of our email",
-                elif command[1]=='pm':
+                elif command[1]=='dm':
                     cursor.execute("UPDATE oauth_record SET opt_out_pm=1 WHERE discord_username=?",(discord_username,))
                     conn.commit()
                     return "You have successfully opted out of our private message",
@@ -222,10 +222,10 @@ class UserInterface(BaseInterface):
                     cursor.execute("UPDATE oauth_record SET opt_out_email=0 WHERE discord_username=?",(discord_username,))
                     conn.commit()
                     return "You have successfully opted in our email",
-                elif command[1]=='pm':
+                elif command[1]=='dm':
                     cursor.execute("UPDATE oauth_record SET opt_out_pm=0 WHERE discord_username=?",(discord_username,))
                     conn.commit()
-                    return "You have successfully opted in our private message",
+                    return "You have successfully opted in our direct message",
                 else:
                     return self.unrecognized_command(command[1]),
             else:
@@ -234,10 +234,10 @@ class UserInterface(BaseInterface):
             raise
         except:
             await on_error('preference change')
-            return 'An error has occured',
+            return 'An error has occurred',
     
-    opt.usage='opt (in|out) (email|pm)'
-    opt.description='Change your preference of whether you want to receive notification by a specific method.'
+    opt.usage='opt (in|out) (email|dm)'
+    opt.description='Change your preference of whether you want to receive notification by a specific method for announcements.'
 
 class AdminInterface(UserInterface):
     
