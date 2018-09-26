@@ -208,22 +208,22 @@ class UserInterface(BaseInterface):
             discord_username='{}#{}'.format(message.author.name,message.author.discriminator)
             if command[0]=='out':
                 if command[1]=='email':
-                    cursor.execute("UPDATE oauth_record SET opt_out_email=1 WHERE discord_username='?'",(discord_username))
+                    cursor.execute("UPDATE oauth_record SET opt_out_email=1 WHERE discord_username='?'",(discord_username,))
                     conn.commit()
                     return "You have successfully opted out of our email",
                 elif command[1]=='pm':
-                    cursor.execute("UPDATE oauth_record SET opt_out_pm=1 WHERE discord_username='?'",(discord_username))
+                    cursor.execute("UPDATE oauth_record SET opt_out_pm=1 WHERE discord_username='?'",(discord_username,))
                     conn.commit()
                     return "You have successfully opted out of our private message",
                 else:
                     return self.unrecognized_command(command[1]),
             elif command[1]=='in':
                 if command[1]=='email':
-                    cursor.execute("UPDATE oauth_record SET opt_out_email=0 WHERE discord_username='?'",(discord_username))
+                    cursor.execute("UPDATE oauth_record SET opt_out_email=0 WHERE discord_username='?'",(discord_username,))
                     conn.commit()
                     return "You have successfully opted in our email",
                 elif command[1]=='pm':
-                    cursor.execute("UPDATE oauth_record SET opt_out_pm=0 WHERE discord_username='?'",(discord_username))
+                    cursor.execute("UPDATE oauth_record SET opt_out_pm=0 WHERE discord_username='?'",(discord_username,))
                     conn.commit()
                     return "You have successfully opted in our private message",
                 else:
