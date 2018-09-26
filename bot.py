@@ -125,7 +125,7 @@ class BaseInterface(metaclass=InterfaceMeta):
             except AttributeError:
                 return await split_send_message(message.author, self.error_reply)
             except IndexError:
-                return await split_send_message(message.author, 'Insufficient arguments.\n' + self.error_reply)
+                return await split_send_message(message.author, 'Insufficient arguments.\n' + self.usage)
         else:
             return []
     
@@ -202,7 +202,42 @@ class UserInterface(BaseInterface):
             
     feedback.usage='feedback'
     feedback.description='Send a feedback to the admin team anonymously.'
-
+    
+    async def opt(self, command: list, message: discord.Message) -> tuple:
+        try:
+            discord_username='{}#{}'.format(message.author.name,message.author.discriminator)
+            if command[0]=='out':
+                if command[1]=='email':
+                    cursor.execute("UPDATE oauth_record SET opt_out_email=1 WHERE discord_username=?",(discord_username,))
+                    conn.commit()
+                    return "You have successfully opted out of our email",
+                elif command[1]=='dm':
+                    cursor.execute("UPDATE oauth_record SET opt_out_pm=1 WHERE discord_username=?",(discord_username,))
+                    conn.commit()
+                    return "You have successfully opted out of our private message",
+                else:
+                    return self.unrecognized_command(command[1]),
+            elif command[1]=='in':
+                if command[1]=='email':
+                    cursor.execute("UPDATE oauth_record SET opt_out_email=0 WHERE discord_username=?",(discord_username,))
+                    conn.commit()
+                    return "You have successfully opted in our email",
+                elif command[1]=='dm':
+                    cursor.execute("UPDATE oauth_record SET opt_out_pm=0 WHERE discord_username=?",(discord_username,))
+                    conn.commit()
+                    return "You have successfully opted in our direct message",
+                else:
+                    return self.unrecognized_command(command[1]),
+            else:
+                return self.unrecognized_command(command[0]),
+        except IndexError:
+            raise
+        except:
+            await on_error('preference change')
+            return 'An error has occurred',
+    
+    opt.usage='opt (in|out) (email|dm)'
+    opt.description='Change your preference of whether you want to receive notification by a specific method for announcements.'
 
 class AdminInterface(UserInterface):
     
@@ -392,7 +427,7 @@ def make_announcement(message):
         tasks.append(message.author.send(
                 embed=discord.Embed(title="Your original announcement", description=message.content)))
     elif any(kw in message.content[:15].lower() for kw in
-             ('hi', 'hello', 'yo', 'sup', "what's up", "dear all", 'all', 'yall')):
+             ('hi', 'hello', 'sup', "what's up", "dear all", 'all', 'yall')):
         tasks.append(message.channel.delete_messages((message,)))
         tasks.append(message.author.send(
                 "I have deleted your announcement because you added a greeting word at the beginning of the announcement. Remember, I will add appropriate greetings to each announcement."))
