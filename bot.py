@@ -92,7 +92,6 @@ class InterfaceMeta(type):
         obj.__init__(*args,**kwargs)
         cls._interfaces[channel.id]=obj
         return obj
- ,1 
 
 
 class BaseInterface(metaclass=InterfaceMeta):
