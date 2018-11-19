@@ -1,20 +1,20 @@
 import asyncio.subprocess
-import discord
-import discord.abc
+import datetime
 import functools
 import logging
-import re
+import secrets
 import sqlite3
+import textwrap
 import time
 import traceback
-import secrets
-import datetime
-import collections
 import types
-import textwrap
+
+import collections
+import discord
+import discord.abc
 
 from credentials import BOT_TOKEN
-
+from utils import split_message, send_messages, split_send_message
 
 logger = logging.getLogger('discord')
 logger.setLevel(logging.DEBUG)
@@ -31,68 +31,28 @@ logger.addHandler(handler)
 bot = discord.Client()
 
 allowed_guild_ids = (479544231875182592, 426702004606337034)
-CPU_guild_id=426702004606337034
+CPU_guild_id = 426702004606337034
 
 conn = sqlite3.Connection('db.sqlite3')
 cursor = conn.cursor()
 
 attendance_key = secrets.token_hex(32)
-
-
-def split_message(msg, enclose_in='', separator='\n', limit=2000):
-    limit = limit - len(enclose_in) * 2
-    assert limit > 0
-    
-    res = []
-    remainder = msg
-    while len(remainder) >= limit:
-        new = remainder[:limit]
-        index = new.rfind(separator)
-        
-        if index > 0:
-            remainder = remainder[index + len(separator):]
-            new = new[:index + len(separator)]
-            print(len(remainder), len(new))
-        else:
-            remainder = remainder[limit:]
-        
-        res.append(enclose_in + new + enclose_in)
-    res.append(enclose_in + remainder + enclose_in)
-    return res
-
-
-async def send_messages(to, msgs):
-    assert isinstance(to, discord.abc.Messageable)
-    assert isinstance(msgs, collections.Iterable)
-    
-    res = []
-    for msg in msgs:
-        res.append(await to.send(msg))
-    return res
-
-
-async def split_send_message(to, msg, enclose_in='', separator='\n'):
-    assert isinstance(to, discord.abc.Messageable)
-    assert isinstance(msg, str)
-    msgs = split_message(msg, enclose_in, separator)
-    return await send_messages(to, msgs)
+effective_meeting_count=1
 
 
 class InterfaceMeta(type):
     
-    def __init__(cls,*args,**kwargs):
-        cls._interfaces={}
-        super().__init__(*args,**kwargs)
-
+    def __init__(cls, *args, **kwargs):
+        cls._interfaces = {}
+        super().__init__(*args, **kwargs)
     
-    def __call__(cls,channel: discord.abc.PrivateChannel,*args,**kwargs):
+    def __call__(cls, channel: discord.abc.PrivateChannel, *args, **kwargs):
         if channel.id in cls._interfaces:
             return cls._interfaces[channel.id]
-        obj=cls.__new__(cls,*args,**kwargs)
-        obj.__init__(*args,**kwargs)
-        cls._interfaces[channel.id]=obj
+        obj = cls.__new__(cls, *args, **kwargs)
+        obj.__init__(channel, *args, **kwargs)
+        cls._interfaces[channel.id] = obj
         return obj
-    
 
 
 class BaseInterface(metaclass=InterfaceMeta):
@@ -104,8 +64,9 @@ class BaseInterface(metaclass=InterfaceMeta):
     """
     error_reply = "Error"
     
-    def __init__(self):
-        self._dispatch_locked=False
+    def __init__(self, channel: discord.abc.PrivateChannel):
+        self._dispatch_locked = False
+        self._channel = channel
     
     def unrecognized_command(self, command) -> str:
         return ("Unrecognized command `%s`." % command) + self.usage
@@ -113,15 +74,17 @@ class BaseInterface(metaclass=InterfaceMeta):
     async def dispatch(self, command: str, message) -> list:
         if not self._dispatch_locked:
             if command == attendance_key:
-                cursor.execute('INSERT INTO attendance VALUES (?,?)',
-                               ('%s#%s' % (message.author.name, message.author.discriminator), datetime.datetime.now()))
+                cursor.execute('INSERT INTO attendance VALUES (?,?,?)', (
+                '%s#%s' % (message.author.name, message.author.discriminator), datetime.datetime.now(), effective_meeting_count))
                 conn.commit()
                 return await split_send_message(message.author, 'Thank you. Your attendance has been recorded.')
-            
             try:
                 command = command.split()
                 func = getattr(self, command[0])
-                return await send_messages(message.author, await func(command[1:] if len(command) > 1 else [], message))
+                reply= await func(command[1:] if len(command) > 1 else [],message)
+                if isinstance(reply,str):
+                    reply=(reply,)
+                return await send_messages(message.author,reply)
             except AttributeError:
                 return await split_send_message(message.author, self.error_reply)
             except IndexError:
@@ -130,22 +93,40 @@ class BaseInterface(metaclass=InterfaceMeta):
             return []
     
     def lock_dispatch(self):
-        self._dispatch_locked=True
-        
+        self._dispatch_locked = True
+    
     def unlock_dispatch(self):
-        self._dispatch_locked=False
+        self._dispatch_locked = False
     
     @property
     def usage(self) -> str:
         res = 'Usage:\n'
         for cls in self.__class__.__mro__:
-            for name,attr in cls.__dict__.items():
+            for name, attr in cls.__dict__.items():
                 if isinstance(attr, types.FunctionType) and hasattr(attr, 'usage'):
                     res += '```' + attr.usage + '```'
                     if hasattr(attr, 'description'):
                         res += attr.description
                     res += '\n\n'
         return res
+
+
+class Conversation:
+    def __init__(self, interface: BaseInterface):
+        self.interface = interface
+    
+    def __enter__(self):
+        self.interface.lock_dispatch()
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.interface.unlock_dispatch()
+    
+    async def send(self, msg, enclose_in, separator):
+        await split_send_message(self.interface._channel,msg,enclose_in,separator)
+    
+    async def recv(self,timeout=1800) -> discord.Message:
+        return await bot.wait_for('message', check=lambda msg:msg.channel==self.interface._channel and not msg.author.bot, timeout=timeout)
+
 
 
 class UserInterface(BaseInterface):
@@ -171,59 +152,78 @@ class UserInterface(BaseInterface):
     @staticmethod
     def next_message(channel):
         def check(msg):
-            return msg.channel==channel and not msg.author.bot
+            return msg.channel == channel and not msg.author.bot
         
         return check
     
-    
-    async def feedback(self,command: list, message: discord.Message) -> tuple:
-        try:
-            self.lock_dispatch()
+    async def feedback(self, command: list, message: discord.Message) -> tuple:
+        
+        with Conversation(self) as con:
             feedback_channel = discord.utils.find(lambda c: c.name == 'feedback', CPU_guild.channels)
-            await message.author.send('Your next message to me will be forwarded to the admin team anonymously. Type `cancel` to cancel.')
-            
+            await con.send('Your next message to me will be forwarded to the admin team anonymously. Type `cancel` to cancel.')
             try:
-                msg_to_forward=await bot.wait_for('message',check=self.next_message(message.channel),timeout=1800)
+                msg_to_forward=await con.recv()
             except asyncio.TimeoutError:
-                return 'You have not responded in 30 minutes. I will no longer forward your next message to the admin team',
-            
-            if msg_to_forward.content=='cancel':
-                return 'Operation canceled',
-            
+                return 'You have not responded in 30 minutes. I will no longer forward your next message to the admin team.',
+            if msg_to_forward.content == 'cancel':
+                return 'Operation canceled.',
             try:
                 await feedback_channel.send(msg_to_forward.content)
             except:
                 await on_error('feedback')
-                return 'Sorry an error has occurred',
-                
+                return 'Sorry an error has occurred.',
             return 'Your feedback has been forwarded to the admin team. Thank you.',
-        finally:
-            self.unlock_dispatch()
-            
-    feedback.usage='feedback'
-    feedback.description='Send a feedback to the admin team anonymously.'
+        
+        # try:
+        #     self.lock_dispatch()
+        #     feedback_channel = discord.utils.find(lambda c: c.name == 'feedback', CPU_guild.channels)
+        #     await self._channel.send(
+        #         'Your next message to me will be forwarded to the admin team anonymously. Type `cancel` to cancel.')
+        #
+        #     try:
+        #         msg_to_forward = await bot.wait_for('message', check=self.next_message(message.channel), timeout=1800)
+        #     except asyncio.TimeoutError:
+        #         return 'You have not responded in 30 minutes. I will no longer forward your next message to the admin team',
+        #
+        #     if msg_to_forward.content == 'cancel':
+        #         return 'Operation canceled',
+        #
+        #     try:
+        #         await feedback_channel.send(msg_to_forward.content)
+        #     except:
+        #         await on_error('feedback')
+        #         return 'Sorry an error has occurred',
+        #
+        #     return 'Your feedback has been forwarded to the admin team. Thank you.',
+        # finally:
+        #     self.unlock_dispatch()
+    
+    feedback.usage = 'feedback'
+    feedback.description = 'Send a feedback to the admin team anonymously.'
     
     async def opt(self, command: list, message: discord.Message) -> tuple:
         try:
-            discord_username='{}#{}'.format(message.author.name,message.author.discriminator)
-            if command[0]=='out':
-                if command[1]=='email':
-                    cursor.execute("UPDATE oauth_record SET opt_out_email=1 WHERE discord_username=?",(discord_username,))
+            discord_username = '{}#{}'.format(message.author.name, message.author.discriminator)
+            if command[0] == 'out':
+                if command[1] == 'email':
+                    cursor.execute("UPDATE oauth_record SET opt_out_email=1 WHERE discord_username=?",
+                                   (discord_username,))
                     conn.commit()
                     return "You have successfully opted out of our email",
-                elif command[1]=='dm':
-                    cursor.execute("UPDATE oauth_record SET opt_out_pm=1 WHERE discord_username=?",(discord_username,))
+                elif command[1] == 'dm':
+                    cursor.execute("UPDATE oauth_record SET opt_out_pm=1 WHERE discord_username=?", (discord_username,))
                     conn.commit()
                     return "You have successfully opted out of our private message",
                 else:
                     return self.unrecognized_command(command[1]),
-            elif command[1]=='in':
-                if command[1]=='email':
-                    cursor.execute("UPDATE oauth_record SET opt_out_email=0 WHERE discord_username=?",(discord_username,))
+            elif command[1] == 'in':
+                if command[1] == 'email':
+                    cursor.execute("UPDATE oauth_record SET opt_out_email=0 WHERE discord_username=?",
+                                   (discord_username,))
                     conn.commit()
                     return "You have successfully opted in our email",
-                elif command[1]=='dm':
-                    cursor.execute("UPDATE oauth_record SET opt_out_pm=0 WHERE discord_username=?",(discord_username,))
+                elif command[1] == 'dm':
+                    cursor.execute("UPDATE oauth_record SET opt_out_pm=0 WHERE discord_username=?", (discord_username,))
                     conn.commit()
                     return "You have successfully opted in our direct message",
                 else:
@@ -236,11 +236,39 @@ class UserInterface(BaseInterface):
             await on_error('preference change')
             return 'An error has occurred',
     
-    opt.usage='opt (in|out) (email|dm)'
-    opt.description='Change your preference of whether you want to receive notification by a specific method for announcements.'
+    opt.usage = 'opt (in|out) (email|dm)'
+    opt.description = 'Change your preference of whether you want to receive notification by a specific method for announcements.'
+    
+    async def attendance(self, command, message) -> tuple:
+        username = f'{message.author.name}#{message.author.discriminator}'
+        if command[0]=='status':
+            cursor.execute('SELECT sum(effective), count() FROM attendance where discord_username=?',(username,))
+            res=cursor.fetchone() # only one row will be returned
+            if res[1]==0:
+                return 'You have not attended any meeting this year.',
+            if res[0]==res[1]:
+                return f"You have attended {res[1]} meeting{'s' if res[1]>1 else ''} this year.",
+            return f"You have attended {res[1]} meeting{'s' if res[1]>1 else ''} this year, which count{'s' if res[1]==1 else ''} as {res[0]} meetings with bonuses.",
+        
+        elif command[0]=='list':
+            cursor.execute('SELECT time, effective FROM attendance where discord_username=?', (username,))
+            res=cursor.fetchall()
+            reply='You have attended the following meetings:\n'
+            for att in res:
+                reply+=att[0].split()[0]
+                if att[1]!=1:
+                    reply+=f' (counts as {att[1]} meetings)'
+                reply+='\n'
+            return split_message(reply)
+        else:
+            return self.unrecognized_command(command[0]),
+    
+    attendance.usage='attendance (status|list)'
+    attendance.description='Show the number of meetings you have attended'
+        
+
 
 class AdminInterface(UserInterface):
-    
     @property
     def error_reply(self):
         return self.usage
@@ -329,12 +357,18 @@ class AdminInterface(UserInterface):
     shell.description = 'Run shell command `$*` in `/srv/CPUBot/` with root privilege.'
     
     async def meeting(self, command: list, message: discord.Message) -> list:
-        global attendance_key
+        global attendance_key,effective_meeting_count
         if command[0] == 'begin':
             attendance_key = secrets.token_hex(3)
+            try:
+                effective_meeting_count=int(command[1])
+            except (IndexError,ValueError):
+                pass
+                
             reply = 'Attendance key: `%s`' % attendance_key
         elif command[0] == 'end':
             attendance_key = secrets.token_hex(64)
+            effective_meeting_count=1
             reply = 'Meeting is over. Attendance key revoked.'
         else:
             reply = self.unrecognized_command(command[0])
@@ -353,9 +387,24 @@ class AdminInterface(UserInterface):
     restart.usage = 'restart'
     restart.description = 'Restart CPUBot'
 
-
-
-
+    async def attendance(self, command, message):
+        if command[0]=='today':
+            cursor.execute("SELECT first_name, last_name FROM attendance a "
+                           "JOIN (SELECT first_name, last_name, discord_username FROM oauth_record GROUP BY school_email) o "
+                           "ON o.discord_username=a.discord_username WHERE a.time>? AND a.time<?; ",(datetime.date.today()-datetime.timedelta(1),datetime.date.today()+datetime.timedelta(1)))
+            res=cursor.fetchall()
+            if not res:
+                return "Nobody has attended today's meeting",
+            reply=''
+            for p in res:
+                reply+=p[0]+' '+p[1]+'\n'
+            return split_message(reply)
+        else:
+            return await super().attendance(command,message)
+        
+    attendance.usage='attendance today'
+    attendance.description='Show people who have attended the meeting today'
+    
 @bot.event
 async def on_ready():
     print('Logged in as %s' % bot.user.name)
@@ -374,7 +423,7 @@ async def on_ready():
                  bot.get_user(119211672513675265),
                  bot.get_user(386377340743057408)
              ] + superusers
-
+    
     CPU_guild = discord.utils.find(lambda g: g.id == CPU_guild_id, bot.guilds)
 
 
@@ -402,7 +451,6 @@ So good luck, have fun coding!'''.strip())
         pass  # Channel does not exist
 
 
-
 @bot.event
 async def on_message(message):
     if not message.author.bot:
@@ -411,11 +459,17 @@ async def on_message(message):
                 interface = AdminInterface(message.channel)
             else:
                 interface = UserInterface(message.channel)
-            
-            await interface.dispatch(message.content, message)
+            try:
+                await interface.dispatch(message.content, message)
+            except:
+                try:
+                    await message.author.send("An error has occurred. My creator has been notified (well, hopefully).")
+                except:
+                    pass
+                raise
         elif message.channel.name.lower() == 'announcements':
             make_announcement(message)
-            
+
 
 def make_announcement(message):
     tasks = []
@@ -433,13 +487,6 @@ def make_announcement(message):
                 "I have deleted your announcement because you added a greeting word at the beginning of the announcement. Remember, I will add appropriate greetings to each announcement."))
         tasks.append(message.author.send(
                 embed=discord.Embed(title="Your original announcement", description=message.content)))
-    
-    # elif re.search(r'\bI\b', message.content) or re.search(r'\bme\b', message.content):
-    #     tasks.append(message.channel.delete_messages((message,)))
-    #     tasks.append(message.author.send(
-    #             "I have deleted your announcement because you used first person pronoun in your message. Remember, people have no way to tell who sent out that announcement."))
-    #     tasks.append(message.author.send(
-    #             embed=discord.Embed(title="Your original announcement", description=message.content)))
     
     else:
         message_body = message.clean_content
@@ -479,6 +526,7 @@ def make_announcement(message):
         future.add_done_callback(callback)
     asyncio.ensure_future(future)
 
+
 def announcement_succeeded(future, recipients, confirm_to, time_started, embed):
     time_spent = round(time.time() - time_started, 2)
     results = future.result()
@@ -502,7 +550,7 @@ def announcement_succeeded(future, recipients, confirm_to, time_started, embed):
         msg = f"Your announcement has been successfully sent to {len(recipients)-len(failed_list)}/{len(recipients)} members in {time_spent} seconds"
         embed.title = msg
         sch.append(confirm_to.send(embed=embed))
-        sch.append(confirm_to.send('Failed for:\n' + '\n'.join(m.nick for m in recipients)))
+        sch.append(confirm_to.send('Failed for:\n' + '\n'.join(m.nick or m.name for m in recipients)))
     
     asyncio.ensure_future(asyncio.gather(*sch))
 
@@ -533,7 +581,9 @@ async def on_error(event_method, *args, **kwargs):
 
 cursor.execute('SELECT first_name, last_name, discord_username FROM oauth_record WHERE join_success = 1')
 bot.users_cache = {}
+
 for record in cursor.fetchall():
     bot.users_cache[record[2]] = record[:2]
+
 if __name__ == '__main__':
     bot.run(BOT_TOKEN)
