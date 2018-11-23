@@ -8,7 +8,8 @@ import textwrap
 import time
 import traceback
 import types
-
+import re
+import io
 import collections
 import discord
 import discord.abc
@@ -121,8 +122,15 @@ class Conversation:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.interface.unlock_dispatch()
     
-    async def send(self, msg, enclose_in, separator):
-        await split_send_message(self.interface._channel,msg,enclose_in,separator)
+    async def send(self, msg, enclose_in, separator,**kwargs):
+        """
+        :param msg: passed to split_send_message
+        :param enclose_in: passed to split_send_message
+        :param separator: passed to split_send_message
+        :param kwargs: passed to discord.Messageable.send
+        :return:
+        """
+        await split_send_message(self.interface._channel,msg,enclose_in,separator,**kwargs)
     
     async def recv(self,timeout=1800) -> discord.Message:
         return await bot.wait_for('message', check=lambda msg:msg.channel==self.interface._channel and not msg.author.bot, timeout=timeout)
@@ -174,29 +182,6 @@ class UserInterface(BaseInterface):
                 return 'Sorry an error has occurred.',
             return 'Your feedback has been forwarded to the admin team. Thank you.',
         
-        # try:
-        #     self.lock_dispatch()
-        #     feedback_channel = discord.utils.find(lambda c: c.name == 'feedback', CPU_guild.channels)
-        #     await self._channel.send(
-        #         'Your next message to me will be forwarded to the admin team anonymously. Type `cancel` to cancel.')
-        #
-        #     try:
-        #         msg_to_forward = await bot.wait_for('message', check=self.next_message(message.channel), timeout=1800)
-        #     except asyncio.TimeoutError:
-        #         return 'You have not responded in 30 minutes. I will no longer forward your next message to the admin team',
-        #
-        #     if msg_to_forward.content == 'cancel':
-        #         return 'Operation canceled',
-        #
-        #     try:
-        #         await feedback_channel.send(msg_to_forward.content)
-        #     except:
-        #         await on_error('feedback')
-        #         return 'Sorry an error has occurred',
-        #
-        #     return 'Your feedback has been forwarded to the admin team. Thank you.',
-        # finally:
-        #     self.unlock_dispatch()
     
     feedback.usage = 'feedback'
     feedback.description = 'Send a feedback to the admin team anonymously.'
@@ -468,28 +453,51 @@ async def on_message(message):
                     pass
                 raise
         elif message.channel.name.lower() == 'announcements':
-            make_announcement(message)
+            await make_announcement(message)
 
 
-def make_announcement(message):
+async def make_announcement(message):
     tasks = []
     confirm = False
     if message.mention_everyone:
-        tasks.append(message.channel.delete_messages((message,)))
         tasks.append(message.author.send(
                 "I have deleted your announcement because you mentioned everyone. Remember, I will add appropriate greetings to each announcement."))
-        tasks.append(message.author.send(
-                embed=discord.Embed(title="Your original announcement", description=message.content)))
-    elif any(kw in message.content[:15].lower() for kw in
-             ('hi', 'hello', 'sup', "what's up", "dear all", 'all', 'yall')):
-        tasks.append(message.channel.delete_messages((message,)))
+        tasks.append(message.author.send(embed=discord.Embed(title="Your original announcement", description=message.content)))
+    elif re.search(r"\b(hi|hello|sup|what's up|dear all|all|yall)\b",message.content.lower()[:15]) is not None:
         tasks.append(message.author.send(
                 "I have deleted your announcement because you added a greeting word at the beginning of the announcement. Remember, I will add appropriate greetings to each announcement."))
         tasks.append(message.author.send(
                 embed=discord.Embed(title="Your original announcement", description=message.content)))
     
     else:
-        message_body = message.clean_content
+        files=[]
+        for f in message.attachments:
+            stream=io.BytesIO()
+            await f.save(stream)
+            stream.seek(0)
+            files.append(discord.File(stream))
+        await message.channel.delete_messages((message,))
+        
+        # attachments are deleted after the message is deleted
+        # so cache them first
+        
+        message_body = message.content
+        if message.author in admins:
+            interface = AdminInterface(message.channel)
+        else:
+            interface = UserInterface(message.channel)
+        with Conversation(interface) as con:
+            await con.send("You are about to make this announcement")
+            await con.send(message_body,embeds=message.embeds,files=files)
+            await con.send("Confirm? yes/no")
+            try:
+                if (await con.recv()).lower()!='yes':
+                    await con.send("Operation cancelled")
+                    return
+            except asyncio.TimeoutError:
+                await con.send("Operation timed out")
+                return
+
         recipients = []
         confirm = True
         for member in message.channel.members:
@@ -513,10 +521,8 @@ def make_announcement(message):
                 else:
                     message_header += ','
                 recipients.append(member)
-                tasks.append(member.send(message_header + '\n' + message_body))
-        
-        tasks.append(message.channel.delete_messages((message,)))
-        tasks.append(message.channel.send('Hi everyone,\n' + message.content))
+                tasks.append(member.send(message_header + '\n' + message_body,embeds=message.embeds,files=files))
+        tasks.append(message.channel.send('Hi everyone,\n' + message.content,embeds=message.embeds,files=files))
     
     future = asyncio.gather(*tasks, return_exceptions=True)
     if confirm:
