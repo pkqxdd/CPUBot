@@ -123,7 +123,7 @@ class Conversation:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.interface.unlock_dispatch()
     
-    async def send(self, msg, enclose_in, separator,**kwargs):
+    async def send(self, msg, enclose_in='', separator='\n',**kwargs):
         """
         :param msg: passed to split_send_message
         :param enclose_in: passed to split_send_message
