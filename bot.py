@@ -118,6 +118,7 @@ class Conversation:
     
     def __enter__(self):
         self.interface.lock_dispatch()
+        return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.interface.unlock_dispatch()
