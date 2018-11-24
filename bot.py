@@ -32,7 +32,7 @@ logger.addHandler(handler)
 
 bot = discord.Client()
 
-DEBUG=True
+DEBUG=False
 
 allowed_guild_ids = (479544231875182592, 426702004606337034)
 CPU_guild_id = 479544231875182592 if DEBUG else 426702004606337034
@@ -90,7 +90,6 @@ class BaseInterface(metaclass=InterfaceMeta):
                     reply=(reply,)
                 return await send_messages(message.author,reply)
             except AttributeError:
-                raise
                 return await split_send_message(message.author, self.error_reply)
             except IndexError:
                 return await split_send_message(message.author, 'Insufficient arguments.\n' + self.usage)
