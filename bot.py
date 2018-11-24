@@ -10,6 +10,7 @@ import traceback
 import types
 import re
 import io
+import hashlib
 import collections
 import discord
 import discord.abc
@@ -31,8 +32,10 @@ logger.addHandler(handler)
 
 bot = discord.Client()
 
+DEBUG=True
+
 allowed_guild_ids = (479544231875182592, 426702004606337034)
-CPU_guild_id = 426702004606337034
+CPU_guild_id = 479544231875182592 if DEBUG else 426702004606337034
 
 conn = sqlite3.Connection('db.sqlite3')
 cursor = conn.cursor()
@@ -87,6 +90,7 @@ class BaseInterface(metaclass=InterfaceMeta):
                     reply=(reply,)
                 return await send_messages(message.author,reply)
             except AttributeError:
+                raise
                 return await split_send_message(message.author, self.error_reply)
             except IndexError:
                 return await split_send_message(message.author, 'Insufficient arguments.\n' + self.usage)
@@ -129,9 +133,9 @@ class Conversation:
         :param enclose_in: passed to split_send_message
         :param separator: passed to split_send_message
         :param kwargs: passed to discord.Messageable.send
-        :return:
+        :return: messages
         """
-        await split_send_message(self.interface._channel,msg,enclose_in,separator,**kwargs)
+        return await split_send_message(self.interface._channel,msg,enclose_in,separator,**kwargs)
     
     async def recv(self,timeout=1800) -> discord.Message:
         return await bot.wait_for('message', check=lambda msg:msg.channel==self.interface._channel and not msg.author.bot, timeout=timeout)
@@ -391,6 +395,11 @@ class AdminInterface(UserInterface):
     attendance.usage='attendance today'
     attendance.description='Show people who have attended the meeting today'
     
+    async def announcement(self,command,message):
+        await make_announcement(self)
+        return ()
+    
+    
 @bot.event
 async def on_ready():
     print('Logged in as %s' % bot.user.name)
@@ -453,111 +462,135 @@ async def on_message(message):
                 except:
                     pass
                 raise
-        elif message.channel.name.lower() == 'announcements':
-            await make_announcement(message)
 
+def attach_files(names) -> list:
+    l=[]
+    for filename,display_name in names:
+        l.append(discord.File(filename,filename=display_name))
+    return l[::-1] # well obviously discord.py uses pop so to retain image orders
 
-async def make_announcement(message):
-    tasks = []
-    confirm = False
-    if message.mention_everyone:
-        tasks.append(message.author.send(
-                "I have deleted your announcement because you mentioned everyone. Remember, I will add appropriate greetings to each announcement."))
-        tasks.append(message.author.send(embed=discord.Embed(title="Your original announcement", description=message.content)))
-    elif re.search(r"\b(hi|hello|sup|what's up|dear all|all|yall)\b",message.content.lower()[:15]) is not None:
-        tasks.append(message.author.send(
-                "I have deleted your announcement because you added a greeting word at the beginning of the announcement. Remember, I will add appropriate greetings to each announcement."))
-        tasks.append(message.author.send(
-                embed=discord.Embed(title="Your original announcement", description=message.content)))
     
-    else:
-        files=[]
-        for f in message.attachments:
-            stream=io.BytesIO()
-            await f.save(stream)
-            stream.seek(0)
-            files.append(discord.File(stream))
-        await message.channel.delete_messages((message,))
-        
-        # attachments are deleted after the message is deleted
-        # so cache them first
-        
-        message_body = message.content
-        if message.author in admins:
-            interface = AdminInterface(message.channel)
-        else:
-            interface = UserInterface(message.channel)
-        with Conversation(interface) as con:
+
+async def make_announcement(interface):
+    tasks = []
+    files = []
+    channel=discord.utils.get(CPU_guild.channels,name='announcements')
+    
+    with Conversation(interface) as con:
+        try:
+            await con.send('Commencing announcement mode. Please send me the announcement you are about to make. Type `cancel` to cancel.')
+            message_header = 'Hi $name\n'
+            message_body = (await con.recv()).content
+            if message_body=='cancel':
+                await con.send("Operation cancelled")
+                return
+            
+            while True:
+                await con.send(f"Do you wish to attach {'an' if not files else 'another'} image? yes/no")
+                if (await con.recv()).content.lower()=='yes':
+                    await con.send('Please send me the image. Type `cancel` to cancel the image upload.')
+                    res=await con.recv()
+                    if res.content=='cancel':
+                        break
+                    if not res.attachments:
+                        await con.send('You did not upload an image. Abort.')
+                        return
+                    
+                    for attachment in res.attachments:
+                        filename=attachment.filename
+                        binary=io.BytesIO()
+                        await attachment.save(binary)
+                        
+                        h=hashlib.sha1(binary.read()).hexdigest()
+                        binary.seek(0)
+                        
+                        f=open(f"images/{h}.{filename.split('.')[-1]}",'wb+')
+                        f.write(binary.read())
+                        f.close()
+                        files.append( (f"images/{h}.{filename.split('.')[-1]}",filename) )
+                        
+                        # embed=discord.Embed()
+                        # embed.title=filename
+                        # embed.set_image(url=f"http://cpu.party/images/{h}.{filename.split('.')[-1]}")
+                        # embeds.append(embed)
+                else:
+                    break
+            
             await con.send("You are about to make this announcement")
-            await con.send(message_body,embeds=message.embeds,files=files)
+            await con.send('-'*40)
+            await con.send(message_header+message_body,files=attach_files(files))
+            await con.send('-' * 40)
+            await con.send(f"It will be sent to {len(channel.members)} people.")
             await con.send("Confirm? yes/no")
-            try:
-                if (await con.recv()).lower()!='yes':
-                    await con.send("Operation cancelled")
-                    return
-            except asyncio.TimeoutError:
-                await con.send("Operation timed out")
+            if (await con.recv()).content.lower().strip()!='yes':
+                await con.send("Operation cancelled")
                 return
 
-        recipients = []
-        confirm = True
-        for member in message.channel.members:
-            if not member.bot:
-                
-                username = '%s#%s' % (member.name, member.discriminator)
-                try:
-                    message_header = f"Hi {bot.users_cache[username][0]}"
-                except KeyError:
-                    cursor.execute(
-                            'SELECT DISTINCT first_name,last_name,discord_username, id FROM oauth_record WHERE discord_username=? ORDER BY id DESC LIMIT 1',
-                            (username,))
-                    record = cursor.fetchone()
-                    if record is None:
-                        message_header = f"Hi {member.name}"
-                    else:
-                        bot.users_cache[record[2]] = record[:2]
-                        message_header = f"Hi {record[0]}"
-                if member != message.author and member in superusers:
-                    message_header += f', here is an announcement from CPU by {message.author.nick}:\n'
+        except asyncio.TimeoutError:
+            await con.send("Operation timed out")
+            return
+
+    recipients = []
+    for member in channel.members:
+        if not member.bot:
+            username = '%s#%s' % (member.name, member.discriminator)
+            try:
+                message_header = f"Hi {bot.users_cache[username][0]}"
+            except KeyError:
+                cursor.execute(
+                        'SELECT DISTINCT first_name,last_name,discord_username, id FROM oauth_record WHERE discord_username=? ORDER BY id DESC LIMIT 1',
+                        (username,))
+                record = cursor.fetchone()
+                if record is None:
+                    message_header = f"Hi {member.name}"
                 else:
-                    message_header += ','
-                recipients.append(member)
-                tasks.append(member.send(message_header + '\n' + message_body,embeds=message.embeds,files=files))
-        tasks.append(message.channel.send('Hi everyone,\n' + message.content,embeds=message.embeds,files=files))
-    
+                    bot.users_cache[record[2]] = record[:2]
+                    message_header = f"Hi {record[0]}"
+            if member in superusers:
+                message_header += f", here is an announcement from CPU by {bot.users_cache[interface._channel.recipient.name+'#'+str(interface._channel.recipient.discriminator)][0]}:\n"
+            else:
+                message_header += ','
+            recipients.append(member)
+            tasks.append(member.send(message_header + '\n' + message_body,files=attach_files(files)))
+            
+    tasks.append(channel.send('Hi everyone,\n' + message_body,files=attach_files(files)))
     future = asyncio.gather(*tasks, return_exceptions=True)
-    if confirm:
-        callback = functools.partial(announcement_succeeded, recipients=recipients, confirm_to=message.author,
-                                     time_started=time.time(), embed=discord.Embed(title='Your announcement',
-                                                                                   description='Hi $name,\n' + message_body))
-        future.add_done_callback(callback)
+    
+
+    callback = functools.partial(announcement_succeeded, recipients=recipients, sender=interface._channel,
+                                 time_started=time.time(), embed=discord.Embed(title='Your announcement',
+                                                                               description='Hi $name,\n' + message_body))
+    future.add_done_callback(callback)
     asyncio.ensure_future(future)
 
 
-def announcement_succeeded(future, recipients, confirm_to, time_started, embed):
+def announcement_succeeded(future, recipients, sender, time_started, embed):
     time_spent = round(time.time() - time_started, 2)
     results = future.result()
     failed_list = []
+    errors=[]
     try:
         for i, res in enumerate(results):
             if isinstance(res, Exception):
+                tb=traceback.format_tb(res.__traceback__)
+                tb='\n'.join(tb)
+                errors.append(f'```py\n{str(res)}\n{tb}```')
                 failed_list.append(recipients[i])
     except IndexError:
         pass
-    if len(results) - 2 != len(recipients):
-        print(len(results))
-        print(len(recipients))
-        return  # We have a problem
+        
     sch = []
     if not failed_list:
         msg = f"Your announcement has been successfully sent to all {len(recipients)} members in {time_spent} seconds"
         embed.title = msg
-        sch.append(confirm_to.send(embed=embed))
+        sch.append(sender.send(embed=embed))
     else:
         msg = f"Your announcement has been successfully sent to {len(recipients)-len(failed_list)}/{len(recipients)} members in {time_spent} seconds"
         embed.title = msg
-        sch.append(confirm_to.send(embed=embed))
-        sch.append(confirm_to.send('Failed for:\n' + '\n'.join(m.nick or m.name for m in recipients)))
+        sch.append(sender.send(embed=embed))
+        sch.append(split_send_message(sender, 'Failed for:\n' + '\n'.join(m.nick or m.name for m in recipients)))
+        sch.append(split_send_message(sender, 'Errors:' + '\n'.join(errors)))
+        #print("Errors:```py\n"+'```\n```py\n'.join(map(lambda l:'\n'.join(l),map(traceback.format_tb,errors)))+'```')
     
     asyncio.ensure_future(asyncio.gather(*sch))
 
@@ -566,7 +599,7 @@ def announcement_succeeded(future, recipients, confirm_to, time_started, embed):
 async def on_error(event_method, *args, **kwargs):
     try:
         stacktrace = traceback.format_exc()
-        msg = 'Error at `{time}` during handling event `{event}`. Stacktrace: \n```{trace}```\n'.format(
+        msg = 'Error at `{time}` during handling event `{event}`. Stacktrace: \n```py\n{trace}```\n'.format(
                 time=datetime.datetime.now().isoformat(),
                 event=event_method,
                 trace=stacktrace
