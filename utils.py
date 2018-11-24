@@ -13,7 +13,6 @@ def split_message(msg, enclose_in='', separator='\n', limit=2000):
         if index > 0:
             remainder = remainder[index + len(separator):]
             new = new[:index + len(separator)]
-            print(len(remainder), len(new))
         else:
             remainder = remainder[limit:]
         
