@@ -525,38 +525,38 @@ async def make_announcement(interface):
             return
 
 
-    recipients = []
-    for member in channel.members:
-        if not member.bot:
-            username = '%s#%s' % (member.name, member.discriminator)
-            try:
-                message_header = f"Hi {bot.users_cache[username][0]}"
-            except KeyError:
-                cursor.execute(
-                        'SELECT DISTINCT first_name,last_name,discord_username, id FROM oauth_record WHERE discord_username=? ORDER BY id DESC LIMIT 1',
-                        (username,))
-                record = cursor.fetchone()
-                if record is None:
-                    message_header = f"Hi {member.name}"
+        recipients = []
+        for member in channel.members:
+            if not member.bot:
+                username = '%s#%s' % (member.name, member.discriminator)
+                try:
+                    message_header = f"Hi {bot.users_cache[username][0]}"
+                except KeyError:
+                    cursor.execute(
+                            'SELECT DISTINCT first_name,last_name,discord_username, id FROM oauth_record WHERE discord_username=? ORDER BY id DESC LIMIT 1',
+                            (username,))
+                    record = cursor.fetchone()
+                    if record is None:
+                        message_header = f"Hi {member.name}"
+                    else:
+                        bot.users_cache[record[2]] = record[:2]
+                        message_header = f"Hi {record[0]}"
+                if member in superusers:
+                    message_header += f", here is an announcement from CPU by {bot.users_cache[interface._channel.recipient.name+'#'+str(interface._channel.recipient.discriminator)][0]}:\n"
                 else:
-                    bot.users_cache[record[2]] = record[:2]
-                    message_header = f"Hi {record[0]}"
-            if member in superusers:
-                message_header += f", here is an announcement from CPU by {bot.users_cache[interface._channel.recipient.name+'#'+str(interface._channel.recipient.discriminator)][0]}:\n"
-            else:
-                message_header += ','
-            recipients.append(member)
-            tasks.append(member.send(message_header + '\n' + message_body,files=attach_files(files)))
-            
-    tasks.append(channel.send('Hi everyone,\n' + message_body,files=attach_files(files)))
-    future = asyncio.gather(*tasks, return_exceptions=True)
+                    message_header += ','
+                recipients.append(member)
+                tasks.append(member.send(message_header + '\n' + message_body,files=attach_files(files)))
+                
+        tasks.append(channel.send('Hi everyone,\n' + message_body,files=attach_files(files)))
+        future = asyncio.gather(*tasks, return_exceptions=True)
+        
     
-
-    callback = functools.partial(announcement_succeeded, recipients=recipients, sender=interface._channel,
-                                 time_started=time.time(), embed=discord.Embed(title='Your announcement',
-                                                                               description='Hi $name,\n' + message_body))
-    future.add_done_callback(callback)
-    asyncio.ensure_future(future)
+        callback = functools.partial(announcement_succeeded, recipients=recipients, sender=interface._channel,
+                                     time_started=time.time(), embed=discord.Embed(title='Your announcement',
+                                                                                   description='Hi $name,\n' + message_body))
+        future.add_done_callback(callback)
+        asyncio.ensure_future(future)
 
 
 def announcement_succeeded(future, recipients, sender, time_started, embed):
