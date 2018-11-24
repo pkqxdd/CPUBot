@@ -6,7 +6,7 @@ class Record(models.Model):
     first_name=models.CharField("First Name",max_length=100)
     last_name=models.CharField("Last Name",max_length=100)
     discord_username=models.CharField("Discord Username",max_length=100,blank=True,null=True)
-    discord_user_id=models.IntegerField("Discord User ID",blank=True,null=True)
+    discord_user_id=models.IntegerField("Discord User ID",blank=True,null=True,unique=True)
     school_email=models.EmailField("School Email")
     state=models.CharField("Token", blank=True, max_length=32, unique=True)
     access_token=models.CharField("Access Token",blank=True,null=True,max_length=255)

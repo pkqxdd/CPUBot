@@ -93,9 +93,19 @@ def callback(request: HttpRequest):
     r = requests.get('{api}/users/@me'.format(api=API_ENDPOINT), headers=headers)
     user_data = r.json()
     user_id = user_data['id']
+    
+    try:
+        old=Record.objects.get(discord_user_id=user_id)
+    except Record.DoesNotExist:
+        pass
+    else:
+        old.delete()
+    
     username = user_data['username']
     discriminator = user_data['discriminator']
+    
     record.discord_username = '{}#{}'.format(username, discriminator)
+    record.discord_user_id = user_id
     record.save()
     data = {
         'access_token': record.access_token,
