@@ -32,7 +32,7 @@ logger.addHandler(handler)
 
 bot = discord.Client()
 
-DEBUG=False
+DEBUG = False
 
 allowed_guild_ids = (479544231875182592, 426702004606337034)
 CPU_guild_id = 479544231875182592 if DEBUG else 426702004606337034
@@ -41,7 +41,7 @@ conn = sqlite3.Connection('db.sqlite3')
 cursor = conn.cursor()
 
 attendance_key = secrets.token_hex(32)
-effective_meeting_count=1
+effective_meeting_count = 1
 
 
 class InterfaceMeta(type):
@@ -68,7 +68,7 @@ class BaseInterface(metaclass=InterfaceMeta):
     """
     error_reply = "Error"
     
-    def __init__(self, channel: discord.abc.PrivateChannel):
+    def __init__(self, channel: discord.DMChannel):
         self._dispatch_locked = False
         self._channel = channel
     
@@ -78,16 +78,17 @@ class BaseInterface(metaclass=InterfaceMeta):
     async def dispatch(self, command: str, message) -> list:
         if not self._dispatch_locked:
             if command == attendance_key:
-                cursor.execute('INSERT INTO attendance VALUES (?,?,?)', (message.author.id, datetime.datetime.now(), effective_meeting_count))
+                cursor.execute('INSERT INTO attendance VALUES (?,?,?)',
+                               (message.author.id, datetime.datetime.now(), effective_meeting_count))
                 conn.commit()
                 return await split_send_message(message.author, 'Thank you. Your attendance has been recorded.')
             try:
                 command = command.split()
                 func = getattr(self, command[0])
-                reply= await func(command[1:] if len(command) > 1 else [],message)
-                if isinstance(reply,str):
-                    reply=(reply,)
-                return await send_messages(message.author,reply)
+                reply = await func(command[1:] if len(command) > 1 else [], message)
+                if isinstance(reply, str):
+                    reply = (reply,)
+                return await send_messages(message.author, reply)
             except AttributeError:
                 return await split_send_message(message.author, self.error_reply)
             except IndexError:
@@ -128,9 +129,8 @@ class Conversation:
             self.interface.unlock_dispatch()
             return True
         self.interface.unlock_dispatch()
-        
     
-    async def send(self, msg, enclose_in='', separator='\n',**kwargs):
+    async def send(self, msg, enclose_in='', separator='\n', **kwargs):
         """
         :param msg: passed to split_send_message
         :param enclose_in: passed to split_send_message
@@ -138,11 +138,12 @@ class Conversation:
         :param kwargs: passed to discord.Messageable.send
         :return: messages
         """
-        return await split_send_message(self.interface._channel,msg,enclose_in,separator,**kwargs)
+        return await split_send_message(self.interface._channel, msg, enclose_in, separator, **kwargs)
     
-    async def recv(self,timeout=1800) -> discord.Message:
-        return await bot.wait_for('message', check=lambda msg:msg.channel==self.interface._channel and not msg.author.bot, timeout=timeout)
-
+    async def recv(self, timeout=1800) -> discord.Message:
+        return await bot.wait_for('message',
+                                  check=lambda msg: msg.channel == self.interface._channel and not msg.author.bot,
+                                  timeout=timeout)
 
 
 class UserInterface(BaseInterface):
@@ -176,9 +177,10 @@ class UserInterface(BaseInterface):
         
         async with Conversation(self) as con:
             feedback_channel = discord.utils.find(lambda c: c.name == 'feedback', CPU_guild.channels)
-            await con.send('Your next message to me will be forwarded to the admin team anonymously. Type `cancel` to cancel.')
+            await con.send(
+                    'Your next message to me will be forwarded to the admin team anonymously. Type `cancel` to cancel.')
             try:
-                msg_to_forward=await con.recv()
+                msg_to_forward = await con.recv()
             except asyncio.TimeoutError:
                 return 'You have not responded in 30 minutes. I will no longer forward your next message to the admin team.',
             if msg_to_forward.content == 'cancel':
@@ -189,7 +191,7 @@ class UserInterface(BaseInterface):
                 await on_error('feedback')
                 return 'Sorry an error has occurred.',
             return 'Your feedback has been forwarded to the admin team. Thank you.',
-        
+    
     feedback.usage = 'feedback'
     feedback.description = 'Send a feedback to the admin team anonymously.'
     
@@ -231,37 +233,156 @@ class UserInterface(BaseInterface):
     opt.description = 'Change your preference of whether you want to receive notification by a specific method for announcements.'
     
     async def attendance(self, command, message) -> tuple:
-        if command[0]=='status':
-            cursor.execute('SELECT sum(effective), count() FROM attendance where discord_user_id=?',(message.author.id,))
-            res=cursor.fetchone() # only one row will be returned
-            if res[1]==0:
+        if command[0] == 'status':
+            cursor.execute('SELECT sum(effective), count() FROM attendance where discord_user_id=?',
+                           (message.author.id,))
+            res = cursor.fetchone()  # only one row will be returned
+            if res[1] == 0:
                 return 'You have not attended any meeting this year.',
-            if res[0]==res[1]:
+            if res[0] == res[1]:
                 return f"You have attended {res[1]} meeting{'s' if res[1]>1 else ''} this year.",
             return f"You have attended {res[1]} meeting{'s' if res[1]>1 else ''} this year, which count{'s' if res[1]==1 else ''} as {res[0]} meetings with bonuses.",
         
-        elif command[0]=='list':
+        elif command[0] == 'list':
             cursor.execute('SELECT time, effective FROM attendance where discord_user_id=?', (message.author.id,))
-            res=cursor.fetchall()
-            reply='You have attended the following meetings:\n'
+            res = cursor.fetchall()
+            reply = 'You have attended the following meetings:\n'
             for att in res:
-                reply+=att[0].split()[0]
-                if att[1]!=1:
-                    reply+=f' (counts as {att[1]} meetings)'
-                reply+='\n'
+                reply += att[0].split()[0]
+                if att[1] != 1:
+                    reply += f' (counts as {att[1]} meetings)'
+                reply += '\n'
             return split_message(reply)
         else:
             return self.unrecognized_command(command[0]),
     
-    attendance.usage='attendance {status|list}'
-    attendance.description='Show the number of meetings you have attended'
-    
+    attendance.usage = 'attendance {status|list}'
+    attendance.description = 'Show the number of meetings you have attended'
 
 
 class AdminInterface(UserInterface):
     @property
     def error_reply(self):
         return self.usage
+    
+    
+    async def email(self, command: list, message: discord.Message) -> list:
+        if command[0] == 'list':
+            cursor.execute('SELECT DISTINCT school_email FROM oauth_record')
+            reply = ''
+            for res in cursor.fetchall():
+                reply += res[0] + '\n'
+        else:
+            reply = self.unrecognized_command(command[0])
+        
+        return split_message(reply)
+    
+    email.usage = 'email list'
+    email.description = 'List all unique emails in the database (admin privilege)'
+    
+    async def meeting(self, command: list, message: discord.Message) -> list:
+        global attendance_key, effective_meeting_count
+        if command[0] == 'begin':
+            attendance_key = secrets.token_hex(3)
+            try:
+                effective_meeting_count = float(command[1])
+            except (IndexError, ValueError):
+                pass
+            
+            reply = 'Attendance key: `%s`. The meeting today counts as %d meeting(s)' % (
+                attendance_key, effective_meeting_count)
+        elif command[0] == 'end':
+            attendance_key = secrets.token_hex(64)
+            effective_meeting_count = 1
+            reply = 'Meeting is over. Attendance key revoked.'
+        else:
+            reply = self.unrecognized_command(command[0])
+        return split_message(reply)
+    
+    meeting.usage = 'meeting {begin|end} [effective_meeting=1]'
+    meeting.description = 'Starts or ends a club meeting (admin privilege)'
+    
+    async def attendance(self, command, message):
+        if command[0] == 'today':
+            cursor.execute("SELECT first_name, last_name FROM attendance a "
+                           "JOIN (SELECT first_name, last_name, discord_user_id FROM oauth_record GROUP BY school_email) o "
+                           "ON o.discord_user_id=a.discord_user_id WHERE a.time>? AND a.time<?; ", (
+                               datetime.date.today() - datetime.timedelta(1),
+                               datetime.date.today() + datetime.timedelta(1)))
+            res = cursor.fetchall()
+            if not res:
+                return "Nobody has attended today's meeting",
+            reply = ''
+            for p in res:
+                reply += p[0] + ' ' + p[1] + '\n'
+            return split_message(reply)
+        if command[0] == 'summary':
+            reply = ''
+            cursor.execute(
+                    "SELECT first_name, last_name, count() as total, sum(a.effective) as effective FROM attendance a "
+                    "JOIN (SELECT first_name, last_name, discord_user_id FROM oauth_record GROUP BY school_email) o "
+                    "ON o.discord_user_id=a.discord_user_id GROUP BY a.discord_user_id ORDER BY effective DESC, total DESC")
+            res = cursor.fetchall()
+            for first_name, last_name, total, effective in res:
+                reply += '{name:<20} {effective:>4} (actual {total:>2})\n'.format(
+                        name=first_name + ' ' + last_name,
+                        effective=int(effective) if effective % 1 == 0 else round(effective, 1),
+                        total=total
+                )
+            
+            return split_message(reply, '```')
+        else:
+            return await super().attendance(command, message)
+    
+    attendance.usage = 'attendance {today|summary}'
+    attendance.description = 'Show attendance status (admin privilege)'
+    
+    async def announcement(self, command, message):
+        await make_announcement(self)
+        return ()
+    
+    announcement.usage = 'announcement'
+    announcement.description = 'Make announcement (admin privilege)'
+
+
+class SuperuserInterface(AdminInterface):
+    async def sql(self, command: list, message: discord.Message) -> list:
+        command = list(map(lambda s: s.lower(), command))
+        try:
+            if 'select' not in command or any(kw in command for kw in (
+                    'update', 'insert', 'drop', 'alter', 'table', 'into', 'create', 'value')):
+                reply = "Only SELECT statement is allowed."
+            else:
+                cursor.execute(' '.join(command))
+                reply = str(' '.join(col[0] for col in cursor.description) + '\n' + '\n'.join(
+                        map(str, (cursor.fetchall()))))
+        except:
+            reply = str(traceback.format_exc())
+        
+        return split_message(reply, enclose_in='```')
+    
+    sql.usage = 'sql $sql_select_query'
+    sql.description = 'Query the database. Currently existing tables are `oauth_record` and `attendance` (superuser privilege)'
+    
+    async def shell(self, command: list, message: discord.Message) -> tuple:
+        if message.author in superusers:
+            await self.run_shell(command, message.channel)
+            return ()
+        else:
+            return ('Permission denied',)
+    
+    shell.usage = 'shell $*'
+    shell.description = 'Run shell command `$*` in `/srv/CPUBot/` with root privilege (superuser privilege, **be responsible!**)'
+    
+    async def restart(self, command: list, message: discord.Message):
+        if message.author in superusers:
+            await self.run_shell(['service', 'CPUBot', 'restart'], message.channel)
+            return ()
+        else:
+            return ('Permission denied',)
+    
+    restart.usage = 'restart'
+    restart.description = 'Restart CPUBot (superuser privilege)'
     
     @staticmethod
     async def run_shell(command: list, channel):
@@ -303,120 +424,8 @@ class AdminInterface(UserInterface):
                 await channel.send(
                         "Operation exceeded the %d seconds timeout, so I had to kill it:sweat_smile:" % timeout)
             await channel.send("Process terminated with exit code %d" % proc.returncode)
-    
-    async def sql(self, command: list, message: discord.Message) -> list:
-        command = list(map(lambda s: s.lower(), command))
-        try:
-            if 'select' not in command or any(kw in command for kw in (
-                    'update', 'insert', 'drop', 'alter', 'table', 'into', 'create', 'value')):
-                reply = "Only SELECT statement is allowed. Please, don't try to break the server...because you will."
-            else:
-                cursor.execute(' '.join(command))
-                reply = str(' '.join(col[0] for col in cursor.description) + '\n' + '\n'.join(
-                        map(str, (cursor.fetchall()))))
-        except:
-            reply = str(traceback.format_exc())
-        
-        return split_message(reply, enclose_in='```')
-    
-    sql.usage = 'sql $sql_select_query'
-    sql.description = 'Query the database. Currently existing tables are `oauth_record` and `attendance` (admin privilege)'
-    
-    async def email(self, command: list, message: discord.Message) -> list:
-        if command[0] == 'list':
-            cursor.execute('SELECT DISTINCT school_email FROM oauth_record')
-            reply = ''
-            for res in cursor.fetchall():
-                reply += res[0] + '\n'
-        else:
-            reply = self.unrecognized_command(command[0])
-        
-        return split_message(reply)
-    
-    email.usage = 'email list'
-    email.description = 'List all unique emails in the database (admin privilege)'
-    
-    async def shell(self, command: list, message: discord.Message) -> tuple:
-        if message.author in superusers:
-            await self.run_shell(command, message.channel)
-            return ()
-        else:
-            return ('Permission denied',)
-    
-    shell.usage = 'shell $*'
-    shell.description = 'Run shell command `$*` in `/srv/CPUBot/` with root privilege (superuser privilege)'
-    
-    async def meeting(self, command: list, message: discord.Message) -> list:
-        global attendance_key,effective_meeting_count
-        if command[0] == 'begin':
-            attendance_key = secrets.token_hex(3)
-            try:
-                effective_meeting_count=float(command[1])
-            except (IndexError,ValueError):
-                pass
-                
-            reply = 'Attendance key: `%s`. The meeting today counts as %d meeting(s)' % (attendance_key,effective_meeting_count)
-        elif command[0] == 'end':
-            attendance_key = secrets.token_hex(64)
-            effective_meeting_count=1
-            reply = 'Meeting is over. Attendance key revoked.'
-        else:
-            reply = self.unrecognized_command(command[0])
-        return split_message(reply)
-    
-    meeting.usage = 'meeting {begin|end} [effective_meeting=1]'
-    meeting.description = 'Starts or ends a club meeting (admin privilege)'
-    
-    async def restart(self, command: list, message: discord.Message):
-        if message.author in superusers:
-            await self.run_shell(['service', 'CPUBot', 'restart'], message.channel)
-            return ()
-        else:
-            return ('Permission denied',)
-    
-    restart.usage = 'restart'
-    restart.description = 'Restart CPUBot (superuser privilege)'
 
-    async def attendance(self, command, message):
-        if command[0]=='today':
-            cursor.execute("SELECT first_name, last_name FROM attendance a "
-                           "JOIN (SELECT first_name, last_name, discord_user_id FROM oauth_record GROUP BY school_email) o "
-                           "ON o.discord_user_id=a.discord_user_id WHERE a.time>? AND a.time<?; ",(datetime.date.today()-datetime.timedelta(1),datetime.date.today()+datetime.timedelta(1)))
-            res=cursor.fetchall()
-            if not res:
-                return "Nobody has attended today's meeting",
-            reply=''
-            for p in res:
-                reply+=p[0]+' '+p[1]+'\n'
-            return split_message(reply)
-        if command[0]=='summary':
-            reply=''
-            cursor.execute("SELECT first_name, last_name, count() as total, sum(a.effective) as effective FROM attendance a "
-                           "JOIN (SELECT first_name, last_name, discord_user_id FROM oauth_record GROUP BY school_email) o "
-                           "ON o.discord_user_id=a.discord_user_id GROUP BY a.discord_user_id ORDER BY effective DESC, total DESC")
-            res=cursor.fetchall()
-            for first_name, last_name, total, effective in res:
-                reply+='{name:<20} {effective:<3} (actual {total:>2})\n'.format(
-                        name=first_name+' '+last_name,
-                        effective=int(effective) if effective%1==0 else round(effective,1),
-                        total=total
-                )
-                
-            return split_message(reply,'```')
-        else:
-            return await super().attendance(command,message)
-        
-    attendance.usage='attendance {today|summary}'
-    attendance.description='Show attendance status (admin privilege)'
-    
-    async def announcement(self,command,message):
-        await make_announcement(self)
-        return ()
-    
-    announcement.usage='announcement'
-    announcement.description='Make announcement (admin privilege)'
-    
-    
+
 @bot.event
 async def on_ready():
     print('Logged in as %s' % bot.user.name)
@@ -468,7 +477,10 @@ async def on_message(message):
     if not message.author.bot:
         if isinstance(message.channel, discord.DMChannel):
             if message.author in admins:
-                interface = AdminInterface(message.channel)
+                if message.author in superusers:
+                    interface = SuperuserInterface(message.channel)
+                else:
+                    interface = AdminInterface(message.channel)
             else:
                 interface = UserInterface(message.channel)
             try:
@@ -480,64 +492,65 @@ async def on_message(message):
                     pass
                 raise
 
-def attach_files(names) -> list:
-    l=[]
-    for filename,display_name in names:
-        l.append(discord.File(filename,filename=display_name))
-    return l[::-1] # well obviously discord.py uses pop so to retain image orders
 
-    
+def attach_files(names) -> list:
+    l = []
+    for filename, display_name in names:
+        l.append(discord.File(filename, filename=display_name))
+    return l[::-1]  # well obviously discord.py uses pop so to retain image orders
+
 
 async def make_announcement(interface):
     tasks = []
     files = []
-    channel=discord.utils.get(CPU_guild.channels,name='announcements')
+    channel = discord.utils.get(CPU_guild.channels, name='announcements')
     
     async with Conversation(interface) as con:
-        await con.send('Commencing announcement mode. Please send me the announcement you are about to make. Type `cancel` to cancel.')
+        await con.send(
+                'Commencing announcement mode. Please send me the announcement you are about to make. Type `cancel` to cancel.')
         message_header = 'Hi $name\n'
         message_body = (await con.recv()).content
-        if message_body=='cancel':
+        if message_body == 'cancel':
             await con.send("Operation cancelled")
             return
         
         while True:
             await con.send(f"Do you wish to attach {'an' if not files else 'another'} image? yes/no")
-            if (await con.recv()).content.lower()=='yes':
+            if (await con.recv()).content.lower() == 'yes':
                 await con.send('Please send me the image. Type `cancel` to cancel the image upload.')
-                res=await con.recv()
-                if res.content=='cancel':
+                res = await con.recv()
+                if res.content == 'cancel':
                     break
                 if not res.attachments:
                     await con.send('You did not upload an image. Abort.')
                     return
                 
                 for attachment in res.attachments:
-                    filename=attachment.filename
-                    binary=io.BytesIO()
+                    filename = attachment.filename
+                    binary = io.BytesIO()
                     await attachment.save(binary)
                     
-                    h=hashlib.sha1(binary.read()).hexdigest()
+                    h = hashlib.sha1(binary.read()).hexdigest()
                     binary.seek(0)
                     
-                    f=open(f"images/{h}.{filename.split('.')[-1]}",'wb+')
+                    f = open(f"images/{h}.{filename.split('.')[-1]}", 'wb+')
                     f.write(binary.read())
                     f.close()
-                    files.append( (f"images/{h}.{filename.split('.')[-1]}",filename) )
-                    
+                    files.append((f"images/{h}.{filename.split('.')[-1]}", filename))
+            
             else:
                 break
         
         await con.send("You are about to make this announcement")
-        await con.send('-'*40)
-        await con.send(message_header+message_body,files=attach_files(files))
+        await con.send('-' * 40)
+        await con.send(message_header + message_body, files=attach_files(files))
         await con.send('-' * 40)
         await con.send(f"It will be sent to {len(channel.members)} people.")
         await con.send("Confirm? yes/no")
-        if (await con.recv()).content.lower().strip()!='yes':
+        if (await con.recv()).content.lower().strip() != 'yes':
             await con.send("Operation cancelled")
             return
-
+        
         recipients = []
         for member in channel.members:
             if not member.bot:
@@ -546,23 +559,22 @@ async def make_announcement(interface):
                     if bot.users_cache.opt_out_pm:
                         continue
                 except KeyError:
-                    update_cache() # some people may have joined after the cache was created
+                    update_cache()  # some people may have joined after the cache was created
                     try:
                         message_header = f"Hi {bot.users_cache[member.id].first_name},"
                     except KeyError:
                         message_header = f"Hi {member.name},"
-                    
+                
                 if member in superusers:
                     message_header += f", here is an announcement from CPU by {bot.users_cache[interface._channel.recipient.id].first_name}:\n"
                 else:
                     message_header += ','
                 recipients.append(member)
-                tasks.append(member.send(message_header + '\n' + message_body,files=attach_files(files)))
-                
-        tasks.append(channel.send('Hi everyone,\n' + message_body,files=attach_files(files)))
+                tasks.append(member.send(message_header + '\n' + message_body, files=attach_files(files)))
+        
+        tasks.append(channel.send('Hi everyone,\n' + message_body, files=attach_files(files)))
         future = asyncio.gather(*tasks, return_exceptions=True)
         
-    
         callback = functools.partial(announcement_succeeded, recipients=recipients, sender=interface._channel,
                                      time_started=time.time(), embed=discord.Embed(title='Your announcement',
                                                                                    description='Hi $name,\n' + message_body))
@@ -574,17 +586,17 @@ def announcement_succeeded(future, recipients, sender, time_started, embed):
     time_spent = round(time.time() - time_started, 2)
     results = future.result()
     failed_list = []
-    errors=[]
+    errors = []
     try:
         for i, res in enumerate(results):
             if isinstance(res, Exception):
-                tb=traceback.format_tb(res.__traceback__)
-                tb='\n'.join(tb)
+                tb = traceback.format_tb(res.__traceback__)
+                tb = '\n'.join(tb)
                 errors.append(f'```py\n{str(res)}\n{tb}```')
                 failed_list.append(recipients[i])
     except IndexError:
         pass
-        
+    
     sch = []
     if not failed_list:
         msg = f"Your announcement has been successfully sent to all {len(recipients)} members in {time_spent} seconds"
@@ -596,7 +608,7 @@ def announcement_succeeded(future, recipients, sender, time_started, embed):
         sch.append(sender.send(embed=embed))
         sch.append(split_send_message(sender, 'Failed for:\n' + '\n'.join(m.nick or m.name for m in recipients)))
         sch.append(split_send_message(sender, 'Errors:' + '\n'.join(errors)))
-        #print("Errors:```py\n"+'```\n```py\n'.join(map(lambda l:'\n'.join(l),map(traceback.format_tb,errors)))+'```')
+        # print("Errors:```py\n"+'```\n```py\n'.join(map(lambda l:'\n'.join(l),map(traceback.format_tb,errors)))+'```')
     
     asyncio.ensure_future(asyncio.gather(*sch))
 
@@ -624,12 +636,16 @@ async def on_error(event_method, *args, **kwargs):
     finally:
         await discord.Client.on_error(bot, event_method, *args, **kwargs)
 
+
 def update_cache():
-    cursor.execute('SELECT discord_user_id, first_name, last_name, opt_out_pm, opt_out_email, school_email FROM oauth_record WHERE join_success = 1')
+    cursor.execute(
+            'SELECT discord_user_id, first_name, last_name, opt_out_pm, opt_out_email, school_email FROM oauth_record WHERE join_success = 1')
     bot.users_cache = {}
-    UserCache=collections.namedtuple('Cache',('first_name','last_name','opt_out_pm','opt_out_email','school_email'))
+    UserCache = collections.namedtuple('Cache',
+                                       ('first_name', 'last_name', 'opt_out_pm', 'opt_out_email', 'school_email'))
     for record in cursor.fetchall():
-        bot.users_cache[record[0]]=UserCache(*record[1:])
+        bot.users_cache[record[0]] = UserCache(*record[1:])
+
 
 update_cache()
 
