@@ -119,12 +119,17 @@ class Conversation:
     def __init__(self, interface: BaseInterface):
         self.interface = interface
     
-    def __enter__(self):
+    async def __aenter__(self):
         self.interface.lock_dispatch()
         return self
     
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is asyncio.TimeoutError:
+            await self.send('Operation timed out')
+            self.interface.unlock_dispatch()
+            return True
         self.interface.unlock_dispatch()
+        
     
     async def send(self, msg, enclose_in='', separator='\n',**kwargs):
         """
@@ -170,7 +175,7 @@ class UserInterface(BaseInterface):
     
     async def feedback(self, command: list, message: discord.Message) -> tuple:
         
-        with Conversation(self) as con:
+        async with Conversation(self) as con:
             feedback_channel = discord.utils.find(lambda c: c.name == 'feedback', CPU_guild.channels)
             await con.send('Your next message to me will be forwarded to the admin team anonymously. Type `cancel` to cancel.')
             try:
@@ -186,7 +191,6 @@ class UserInterface(BaseInterface):
                 return 'Sorry an error has occurred.',
             return 'Your feedback has been forwarded to the admin team. Thank you.',
         
-    
     feedback.usage = 'feedback'
     feedback.description = 'Send a feedback to the admin team anonymously.'
     
@@ -475,59 +479,51 @@ async def make_announcement(interface):
     files = []
     channel=discord.utils.get(CPU_guild.channels,name='announcements')
     
-    with Conversation(interface) as con:
-        try:
-            await con.send('Commencing announcement mode. Please send me the announcement you are about to make. Type `cancel` to cancel.')
-            message_header = 'Hi $name\n'
-            message_body = (await con.recv()).content
-            if message_body=='cancel':
-                await con.send("Operation cancelled")
-                return
-            
-            while True:
-                await con.send(f"Do you wish to attach {'an' if not files else 'another'} image? yes/no")
-                if (await con.recv()).content.lower()=='yes':
-                    await con.send('Please send me the image. Type `cancel` to cancel the image upload.')
-                    res=await con.recv()
-                    if res.content=='cancel':
-                        break
-                    if not res.attachments:
-                        await con.send('You did not upload an image. Abort.')
-                        return
-                    
-                    for attachment in res.attachments:
-                        filename=attachment.filename
-                        binary=io.BytesIO()
-                        await attachment.save(binary)
-                        
-                        h=hashlib.sha1(binary.read()).hexdigest()
-                        binary.seek(0)
-                        
-                        f=open(f"images/{h}.{filename.split('.')[-1]}",'wb+')
-                        f.write(binary.read())
-                        f.close()
-                        files.append( (f"images/{h}.{filename.split('.')[-1]}",filename) )
-                        
-                        # embed=discord.Embed()
-                        # embed.title=filename
-                        # embed.set_image(url=f"http://cpu.party/images/{h}.{filename.split('.')[-1]}")
-                        # embeds.append(embed)
-                else:
-                    break
-            
-            await con.send("You are about to make this announcement")
-            await con.send('-'*40)
-            await con.send(message_header+message_body,files=attach_files(files))
-            await con.send('-' * 40)
-            await con.send(f"It will be sent to {len(channel.members)} people.")
-            await con.send("Confirm? yes/no")
-            if (await con.recv()).content.lower().strip()!='yes':
-                await con.send("Operation cancelled")
-                return
-
-        except asyncio.TimeoutError:
-            await con.send("Operation timed out")
+    async with Conversation(interface) as con:
+        await con.send('Commencing announcement mode. Please send me the announcement you are about to make. Type `cancel` to cancel.')
+        message_header = 'Hi $name\n'
+        message_body = (await con.recv()).content
+        if message_body=='cancel':
+            await con.send("Operation cancelled")
             return
+        
+        while True:
+            await con.send(f"Do you wish to attach {'an' if not files else 'another'} image? yes/no")
+            if (await con.recv()).content.lower()=='yes':
+                await con.send('Please send me the image. Type `cancel` to cancel the image upload.')
+                res=await con.recv()
+                if res.content=='cancel':
+                    break
+                if not res.attachments:
+                    await con.send('You did not upload an image. Abort.')
+                    return
+                
+                for attachment in res.attachments:
+                    filename=attachment.filename
+                    binary=io.BytesIO()
+                    await attachment.save(binary)
+                    
+                    h=hashlib.sha1(binary.read()).hexdigest()
+                    binary.seek(0)
+                    
+                    f=open(f"images/{h}.{filename.split('.')[-1]}",'wb+')
+                    f.write(binary.read())
+                    f.close()
+                    files.append( (f"images/{h}.{filename.split('.')[-1]}",filename) )
+                    
+            else:
+                break
+        
+        await con.send("You are about to make this announcement")
+        await con.send('-'*40)
+        await con.send(message_header+message_body,files=attach_files(files))
+        await con.send('-' * 40)
+        await con.send(f"It will be sent to {len(channel.members)} people.")
+        await con.send("Confirm? yes/no")
+        if (await con.recv()).content.lower().strip()!='yes':
+            await con.send("Operation cancelled")
+            return
+
 
     recipients = []
     for member in channel.members:
