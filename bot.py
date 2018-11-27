@@ -130,6 +130,14 @@ class Conversation:
             return True
         self.interface.unlock_dispatch()
     
+    def __enter__(self):
+        self.interface.lock_dispatch()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.interface.unlock_dispatch()
+        
+    
     async def send(self, msg, enclose_in='', separator='\n', **kwargs):
         """
         :param msg: passed to split_send_message
@@ -345,7 +353,7 @@ class AdminInterface(UserInterface):
     announcement.description = 'Make announcement (admin privilege)'
 
 
-class SuperuserInterface(AdminInterface):
+class ServerAdminInterface(AdminInterface):
     async def sql(self, command: list, message: discord.Message) -> list:
         command = list(map(lambda s: s.lower(), command))
         try:
@@ -362,27 +370,27 @@ class SuperuserInterface(AdminInterface):
         return split_message(reply, enclose_in='```')
     
     sql.usage = 'sql $sql_select_query'
-    sql.description = 'Query the database. Currently existing tables are `oauth_record` and `attendance` (superuser privilege)'
+    sql.description = 'Query the database. Currently existing tables are `oauth_record` and `attendance` (server admin privilege)'
     
     async def shell(self, command: list, message: discord.Message) -> tuple:
-        if message.author in superusers:
+        if message.author in server_admins:
             await self.run_shell(command, message.channel)
             return ()
         else:
             return ('Permission denied',)
     
     shell.usage = 'shell $*'
-    shell.description = 'Run shell command `$*` in `/srv/CPUBot/` with root privilege (superuser privilege, **be responsible!**)'
+    shell.description = 'Run shell command `$*` in `/srv/CPUBot/` on cpu.party server with root privilege (server admin privilege)'
     
     async def restart(self, command: list, message: discord.Message):
-        if message.author in superusers:
+        if message.author in server_admins:
             await self.run_shell(['service', 'CPUBot', 'restart'], message.channel)
             return ()
         else:
             return ('Permission denied',)
     
     restart.usage = 'restart'
-    restart.description = 'Restart CPUBot (superuser privilege)'
+    restart.description = 'Restart CPUBot (server admin privilege)'
     
     @staticmethod
     async def run_shell(command: list, channel):
@@ -426,24 +434,25 @@ class SuperuserInterface(AdminInterface):
             await channel.send("Process terminated with exit code %d" % proc.returncode)
 
 
+
 @bot.event
 async def on_ready():
     print('Logged in as %s' % bot.user.name)
     game = discord.Game("with the source code of life")
     await bot.change_presence(activity=game)
-    global jerry, superusers, admins, CPU_guild
+    global jerry, server_admins, admins, CPU_guild
     jerry = bot.get_user(268759214610972673)
-    superusers = [
+    server_admins = [
         bot.get_user(387486747770224642),
     ]
     
-    superusers.append(jerry)
+    server_admins.append(jerry)
     
     admins = [
                  bot.get_user(427179609084264449),
                  bot.get_user(119211672513675265),
                  bot.get_user(386377340743057408)
-             ] + superusers
+             ] + server_admins
     
     CPU_guild = discord.utils.find(lambda g: g.id == CPU_guild_id, bot.guilds)
 
@@ -477,8 +486,8 @@ async def on_message(message):
     if not message.author.bot:
         if isinstance(message.channel, discord.DMChannel):
             if message.author in admins:
-                if message.author in superusers:
-                    interface = SuperuserInterface(message.channel)
+                if message.author in server_admins:
+                    interface = ServerAdminInterface(message.channel)
                 else:
                     interface = AdminInterface(message.channel)
             else:
@@ -505,11 +514,13 @@ async def make_announcement(interface):
     files = []
     channel = discord.utils.get(CPU_guild.channels, name='announcements')
     
-    async with Conversation(interface) as con:
-        await con.send(
-                'Commencing announcement mode. Please send me the announcement you are about to make. Type `cancel` to cancel.')
+    with Conversation(interface) as con:
+        await con.send('Commencing announcement mode.')
+        await con.send('Please send me the announcement you are about to make. Type `cancel` to cancel.')
+        
         message_header = 'Hi $name\n'
         message_body = (await con.recv()).content
+        
         if message_body == 'cancel':
             await con.send("Operation cancelled")
             return
@@ -565,7 +576,7 @@ async def make_announcement(interface):
                     except KeyError:
                         message_header = f"Hi {member.name},"
                 
-                if member in superusers:
+                if member in server_admins:
                     message_header += f", here is an announcement from CPU by {bot.users_cache[interface._channel.recipient.id].first_name}:\n"
                 else:
                     message_header += ','
@@ -608,7 +619,6 @@ def announcement_succeeded(future, recipients, sender, time_started, embed):
         sch.append(sender.send(embed=embed))
         sch.append(split_send_message(sender, 'Failed for:\n' + '\n'.join(m.nick or m.name for m in recipients)))
         sch.append(split_send_message(sender, 'Errors:' + '\n'.join(errors)))
-        # print("Errors:```py\n"+'```\n```py\n'.join(map(lambda l:'\n'.join(l),map(traceback.format_tb,errors)))+'```')
     
     asyncio.ensure_future(asyncio.gather(*sch))
 
