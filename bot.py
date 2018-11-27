@@ -568,15 +568,15 @@ async def make_announcement(interface):
         for member in channel.members:
             if not member.bot:
                 try:
-                    message_header = f"Hi {bot.users_cache[member.id].first_name},"
+                    message_header = f"Hi {bot.users_cache[member.id].first_name}"
                     if bot.users_cache[member.id].opt_out_pm:
                         continue
                 except KeyError:
                     update_cache()  # some people may have joined after the cache was created
                     try:
-                        message_header = f"Hi {bot.users_cache[member.id].first_name},"
+                        message_header = f"Hi {bot.users_cache[member.id].first_name}"
                     except KeyError:
-                        message_header = f"Hi {member.name},"
+                        message_header = f"Hi {member.name}"
                 
                 if member in server_admins:
                     message_header += f", here is an announcement from CPU by {bot.users_cache[interface._channel.recipient.id].first_name}:\n"
