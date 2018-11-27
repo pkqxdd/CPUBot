@@ -90,6 +90,8 @@ class BaseInterface(metaclass=InterfaceMeta):
                     reply = (reply,)
                 return await send_messages(message.author, reply)
             except AttributeError:
+                if DEBUG:
+                    raise
                 return await split_send_message(message.author, self.error_reply)
             except IndexError:
                 return await split_send_message(message.author, 'Insufficient arguments.\n' + self.usage)
@@ -558,16 +560,16 @@ async def make_announcement(interface):
         await con.send('-' * 40)
         await con.send(f"It will be sent to {len(channel.members)} people.")
         await con.send("Confirm? yes/no")
-        if (await con.recv()).content.lower().strip() != 'yes':
+        if (await con.recv()).content.lower() != 'yes':
             await con.send("Operation cancelled")
             return
-        
+
         recipients = []
         for member in channel.members:
             if not member.bot:
                 try:
                     message_header = f"Hi {bot.users_cache[member.id].first_name},"
-                    if bot.users_cache.opt_out_pm:
+                    if bot.users_cache[member.id].opt_out_pm:
                         continue
                 except KeyError:
                     update_cache()  # some people may have joined after the cache was created
