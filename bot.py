@@ -516,7 +516,7 @@ async def make_announcement(interface):
     files = []
     channel = discord.utils.get(CPU_guild.channels, name='announcements')
     
-    with Conversation(interface) as con:
+    async with Conversation(interface) as con:
         await con.send('Commencing announcement mode.')
         await con.send('Please send me the announcement you are about to make. Type `cancel` to cancel.')
         
@@ -619,7 +619,7 @@ def announcement_succeeded(future, recipients, sender, time_started, embed):
         msg = f"Your announcement has been successfully sent to {len(recipients)-len(failed_list)}/{len(recipients)} members in {time_spent} seconds"
         embed.title = msg
         sch.append(sender.send(embed=embed))
-        sch.append(split_send_message(sender, 'Failed for:\n' + '\n'.join(m.nick or m.name for m in recipients)))
+        sch.append(split_send_message(sender, 'Failed for:\n' + '\n'.join(m.nick or m.name for m in failed_list)))
         sch.append(split_send_message(sender, 'Errors:' + '\n'.join(errors)))
     
     asyncio.ensure_future(asyncio.gather(*sch))
