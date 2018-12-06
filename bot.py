@@ -219,7 +219,7 @@ class UserInterface(BaseInterface):
                     return "You have successfully opted out of our private message",
                 else:
                     return self.unrecognized_command(command[1]),
-            elif command[1] == 'in':
+            elif command[0] == 'in':
                 if command[1] == 'email':
                     cursor.execute("UPDATE oauth_record SET opt_out_email=0 WHERE discord_user_id=?",
                                    (message.author.id,))
