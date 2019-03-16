@@ -78,6 +78,9 @@ class BaseInterface(metaclass=InterfaceMeta):
     async def dispatch(self, command: str, message) -> list:
         if not self._dispatch_locked:
             if command == attendance_key:
+                cursor.execute('SELECT * FROM attendance WHERE discord_user_id=? AND time>? AND time<? LIMIT 1',(message.author.id,datetime.datetime.now()-datetime.timedelta(days=1),datetime.datetime.now()+datetime.timedelta(days=1)))
+                if cursor.fetchone():
+                    return await split_send_message(message.author, 'Your attendance for today has already been recorded.')
                 cursor.execute('INSERT INTO attendance VALUES (?,?,?)',
                                (message.author.id, datetime.datetime.now(), effective_meeting_count))
                 conn.commit()
@@ -278,7 +281,7 @@ class AdminInterface(UserInterface):
     
     async def email(self, command: list, message: discord.Message) -> list:
         if command[0] == 'list':
-            cursor.execute('SELECT DISTINCT school_email FROM oauth_record')
+            cursor.execute('SELECT DISTINCT school_email FROM oauth_record WHERE opt_out_email=0')
             reply = ''
             for res in cursor.fetchall():
                 reply += res[0] + '\n'
@@ -292,7 +295,7 @@ class AdminInterface(UserInterface):
     
     async def meeting(self, command: list, message: discord.Message) -> list:
         global attendance_key, effective_meeting_count
-        if command[0] == 'begin':
+        if command[0] == 'begin' or command[0] =='start':
             attendance_key = secrets.token_hex(3)
             try:
                 effective_meeting_count = float(command[1])
@@ -301,7 +304,7 @@ class AdminInterface(UserInterface):
             
             reply = 'Attendance key: `%s`. The meeting today counts as %d meeting(s)' % (
                 attendance_key, effective_meeting_count)
-        elif command[0] == 'end':
+        elif command[0] == 'end' or command[0] == 'stop':
             attendance_key = secrets.token_hex(64)
             effective_meeting_count = 1
             reply = 'Meeting is over. Attendance key revoked.'
@@ -309,8 +312,8 @@ class AdminInterface(UserInterface):
             reply = self.unrecognized_command(command[0])
         return split_message(reply)
     
-    meeting.usage = 'meeting {begin|end} [effective_meeting=1]'
-    meeting.description = 'Starts or ends a club meeting (admin privilege)'
+    meeting.usage = 'meeting {begin|start|end|stop} [effective_meeting=1]'
+    meeting.description = 'Starts or stops a club meeting (admin privilege)'
     
     async def attendance(self, command, message):
         if command[0] == 'today':
@@ -453,7 +456,9 @@ async def on_ready():
     admins = [
                  bot.get_user(427179609084264449),
                  bot.get_user(119211672513675265),
-                 bot.get_user(386377340743057408)
+                 bot.get_user(386377340743057408),
+		 bot.get_user(456243117671055371),
+		 bot.get_user(179685458991644673)
              ] + server_admins
     
     CPU_guild = discord.utils.find(lambda g: g.id == CPU_guild_id, bot.guilds)
@@ -476,7 +481,7 @@ the club leaders and are ready to help––specifically, the leaders are profic
 use the `#lounge` channel for memes, jokes, chats, flirting, and everything else.
 Please redirect any question about me to my creator Jerry `pkqxdd#1358`.
 So good luck, have fun coding!'''.strip())
-    channel = discord.utils.get(member.guild.channels, name='new-members-welcome')
+    channel = discord.utils.get(member.guild.channels, name='new-members')
     try:
         await channel.send(f"{member.nick} has joined the party. Welcome!")
     except AttributeError:
