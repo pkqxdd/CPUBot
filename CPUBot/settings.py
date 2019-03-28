@@ -15,7 +15,7 @@ SECRET_KEY = 'c8ollx$3&&xcl!-&++ztm-o6!nk(g0wjuzwr7!16r4br+y%8-d'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = ['join.cpu.party','204.152.210.176']
+ALLOWED_HOSTS = ['srv.cpu.party']
 
 
 # Application definition
@@ -89,6 +89,6 @@ USE_TZ = True
 STATIC_URL = '/static/'
 
 API_ENDPOINT = 'https://discordapp.com/api/v6'
-REDIRECT_URI = 'https://join.cpu.party/api/callback/'
+REDIRECT_URI = 'https://srv.cpu.party:50741/api/callback/'
 GUILD_ID = '426702004606337034'
 
