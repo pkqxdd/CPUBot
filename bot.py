@@ -627,7 +627,7 @@ async def make_announcement(interface):
                     except KeyError:
                         message_header = f"Hi {member.name}"
 
-                if member in server_admins:
+                if member in admins:
                     message_header += f", here is an announcement from CPU by {bot.users_cache[interface._channel.recipient.id].first_name}:\n"
                 else:
                     message_header += ','
