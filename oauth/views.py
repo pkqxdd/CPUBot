@@ -8,6 +8,7 @@ from django.http import HttpRequest
 from django.utils.timezone import now, timedelta
 import requests
 from django.views.decorators.csrf import csrf_exempt
+from django.core.mail import send_mail
 
 from CPUBot.settings import BOT_TOKEN, CLIENT_ID, CLIENT_SECRET, API_ENDPOINT, GUILD_ID, REDIRECT_URI
 
@@ -26,6 +27,8 @@ def join(request: HttpRequest):
         return HttpResponse("Missing field %s" %e, status=400)
     if not school_email.strip().endswith('@choate.edu'):
         return HttpResponse("Error: Please provide your Choate email", status=400)
+    if Record.objects.filter(school_email=school_email).exists():
+        return HttpResponse("You have already signed up for the club.",status=400)
     try:
         record = Record(first_name=first_name,
                         last_name=last_name,
@@ -41,14 +44,49 @@ def join(request: HttpRequest):
     else:
         record.save(force_insert=True)
     
-    return HttpResponseRedirect(redirect_to=
-    '{api}/oauth2/authorize?response_type=code&client_id={cid}&scope={scope}&state={state}&redirect_uri={redirect}'.format(
+    
+    auth_addr='{api}/oauth2/authorize?response_type=code&client_id={cid}&scope={scope}&state={state}&redirect_uri={redirect}'.format(
             api=API_ENDPOINT,
             cid=CLIENT_ID,
             scope='identify%20guilds.join',
             state=record.state,
             redirect=REDIRECT_URI
-    ))
+    )
+    
+    send_mail(
+            subject='Welcome To Choate Programming Union',
+            message=f"""
+Dear {first_name},
+
+Welcome to Choate Programming Union! To fully utilize the resources we provide, we strongly encourage you to join our Discord server.
+
+Your invitation link is
+{auth_addr}
+Please note that this link is private to you and please do not share it with others.
+
+Choate Programming Union
+""",
+            from_email='bot@cpu.party',
+            recipient_list=[school_email],
+    )
+    
+    
+    return HttpResponse(f"""
+<!DOCType html>
+<html>
+<head><title>Success!</title></head>
+<body>
+<p>
+Thanks {first_name}, you have successfully signed up for the club. An email including an invitation link to
+our Discord server has been sent to {school_email}. If you have not received the email, please check your junk email.
+</p>
+<p>
+You may close this window now.
+</p>
+</body>
+</html>
+
+    """)
 
 
 def callback(request: HttpRequest):
