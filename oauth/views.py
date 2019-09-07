@@ -10,6 +10,7 @@ import requests
 from django.views.decorators.csrf import csrf_exempt
 from django.core.mail import send_mail
 
+
 from CPUBot.settings import BOT_TOKEN, CLIENT_ID, CLIENT_SECRET, API_ENDPOINT, GUILD_ID, REDIRECT_URI
 
 @csrf_exempt
@@ -71,22 +72,17 @@ Choate Programming Union
     )
     
     
-    return HttpResponse(f"""
-<!DOCType html>
-<html>
-<head><title>Success!</title></head>
-<body>
+    return render(requests,'confirmation_template.html',{
+        'title':'success',
+        'text':f"""
+<h1> Success</h1>
 <p>
-Thanks {first_name}, you have successfully signed up for the club. An email including an invitation link to
-our Discord server has been sent to {school_email}. If you have not received the email, please check your junk email.
+Thank you, {first_name}. You have successfully signed up for the club. An email containing an invitation
+link to our Discord server has been sent to {school_email}. If you do not see it, please check your junk email.
 </p>
-<p>
-You may close this window now.
-</p>
-</body>
-</html>
-
-    """)
+"""
+    })
+    
 
 
 def callback(request: HttpRequest):
