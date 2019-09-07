@@ -112,7 +112,9 @@ CPU Bot
 <h1> Success</h1>
 <p>
 Thank you, {first_name}. You have successfully signed up for the club. An email containing an invitation
-link to our Discord server has been sent to <span style="text-decoration:underline">{school_email}</span>. If you do not see it within 5 minutes, please check your junk email.
+link to our Discord server has been sent to <span style="text-decoration:underline">{school_email}</span>.
+If you do not see it within 5 minutes, please check your spam folder. (If the email does end up in your
+spam folder, please report it as not a spam email so you'll receive future emails from us.)
 </p>
 """
     })
