@@ -107,12 +107,12 @@ CPU Bot
     
     
     return render(request,'confirmation_template.html',{
-        'title':'success',
+        'title':'Success',
         'text':f"""
 <h1> Success</h1>
 <p>
 Thank you, {first_name}. You have successfully signed up for the club. An email containing an invitation
-link to our Discord server has been sent to {school_email}. If you do not see it, please check your junk email.
+link to our Discord server has been sent to <span style="text-decoration:underline">{school_email}</span>. If you do not see it within 5 minutes, please check your junk email.
 </p>
 """
     })
