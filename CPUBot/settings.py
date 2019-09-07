@@ -21,7 +21,7 @@ ALLOWED_HOSTS = ['srv.cpu.party']
 # Application definition
 
 INSTALLED_APPS = [
-    'oauth'
+    'oauth',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
