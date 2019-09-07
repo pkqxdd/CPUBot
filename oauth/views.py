@@ -84,6 +84,7 @@ CPU Bot
 </head>
     <body>
     <div class="monospace">
+        <img src="https://cpu.party/img/logos/1024w.png" width="100%">
         <p>
             Hi {first_name},
         </p>
