@@ -77,12 +77,13 @@ CPU Bot
     <title> Welcome To Choate Programming Union </title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body {{
+        .monospace {{
             font-family: 'Courier New', monospace;
         }}
     </style>
 </head>
     <body>
+    <div class="monospace">
         <p>
             Hi {first_name},
         </p>
@@ -97,6 +98,7 @@ CPU Bot
 Your beloved,<br>
 CPU Bot
 </p>
+</div>
     </body>
 </html>
 """
