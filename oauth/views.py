@@ -57,18 +57,49 @@ def join(request: HttpRequest):
     send_mail(
             subject='Welcome To Choate Programming Union',
             message=f"""
-Dear {first_name},
+Hi {first_name},
 
 Welcome to Choate Programming Union! To fully utilize the resources we provide, we strongly encourage you to join our Discord server.
 
-Your invitation link is
+Your invitation link is:
 {auth_addr}
-Please note that this link is private to you and please do not share it with others.
+Please note that this link is private to you so please do not share it with others.
 
-Choate Programming Union
+Your beloved,
+CPU Bot
 """,
             from_email='bot@cpu.party',
             recipient_list=[school_email],
+            html_message=f"""
+<!DOCType html>
+<html>
+<head>
+    <title> Welcome To Choate Programming Union </title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {{
+            font-family: 'Courier New', monospace;
+        }}
+    </style>
+</head>
+    <body>
+        <p>
+            Hi {first_name},
+        </p>
+        <p>
+            Welcome to Choate Programming Union! To fully utilize the resources we provide, we strongly encourage you to join our Discord server.
+        </p>
+        
+<p>
+        <a href="{auth_addr}">Click here</a> to join our server. Please note that this link is private to you so please do not share it with others.
+</p>
+<p>
+Your beloved,<br>
+CPU Bot
+</p>
+    </body>
+</html>
+"""
     )
     
     
