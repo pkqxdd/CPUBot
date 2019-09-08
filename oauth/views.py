@@ -29,7 +29,8 @@ def join(request: HttpRequest):
     if not school_email.strip().endswith('@choate.edu'):
         return HttpResponse("Error: Please provide your Choate email", status=400)
     if Record.objects.filter(school_email=school_email).exists():
-        return render(request,'confirmation_template.html',{"text":"You have already signed up for the club.",'Title':'Error'},status=400)
+        if Record.objects.get(school_email=school_email).join_success:
+            return render(request,'confirmation_template.html',{"text":"You have already signed up for the club.",'Title':'Error'},status=400)
     try:
         record = Record(first_name=first_name,
                         last_name=last_name,
@@ -64,6 +65,9 @@ Welcome to Choate Programming Union! To fully utilize the resources we provide, 
 Your invitation link is:
 {auth_addr}
 Please note that this link is private to you so please do not share it with others.
+
+PS: If you happen to find this email in your spam folder, please log in to your Outlook account in your browser (desktop/mobile clients don't work).
+Then navigate to your spam folder and report it as "not a spam". This will make sure you receive our future communications.
 
 Your beloved,
 CPU Bot
