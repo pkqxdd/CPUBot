@@ -68,7 +68,7 @@ Please note that this link is private to you so please do not share it with othe
 Your beloved,
 CPU Bot
 """,
-            from_email='bot@cpu.party',
+            from_email='CPU Bot<bot@cpu.party>',
             recipient_list=[school_email],
             html_message=f"""
 <!DOCType html>
