@@ -17,9 +17,10 @@ import re
 import ssl
 import discord
 import discord.abc
+import aiohttp
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from credentials import BOT_TOKEN,EMAIL_HOST_PASSWORD
+from credentials import BOT_TOKEN,EMAIL_HOST_PASSWORD,JUPYTER_HUB_API_ENDPOINT,JUPYTER_HUB_API_TOKEN
 from utils import send_messages, split_message, split_send_message
 from cpu_logo_b64encoded import logo
 
@@ -301,6 +302,25 @@ class UserInterface(BaseInterface):
     attendance.usage = 'attendance {status|list}'
     attendance.description = 'Show the number of meetings you have attended'
 
+    async def hub(self,command:list,message:discord.Message):
+        username_to_generate=re.match(r'(?P<n>.+)@choate\.edu',bot.users_cache[message.author.id].school_email).group('n')
+        async with aiohttp.ClientSession() as session:
+            res=await session.post(JUPYTER_HUB_API_ENDPOINT+'/users',
+                                   headers={'Authorization':'token '+JUPYTER_HUB_API_TOKEN},
+                                   json={'usernames':[username_to_generate]}
+                                   )
+            if res.status==201:
+                return [f'Successfully created account with username `{username_to_generate}`. Please log in at https://hub.cpu.party. Your password will be whatever you choose to log in with the first time.']
+            elif res.status==409:
+                return [f'You already have an account. Please log in at https://hub.cpu.party with username `{username_to_generate}`.']
+            else:
+                return ["Error while attempting to create account"]
+            
+            
+            
+            
+    hub.usage='hub'
+    hub.description='Get credentials for your JupyterHub account'
 
 class AdminInterface(UserInterface):
     @property
@@ -583,7 +603,7 @@ async def send_email(interface: AdminInterface):
         await con.send("I have sent you a sample email. It may take up to 5 minutes to arrive. If it looks ok, type `proceed` to send it to everyone. Type `cancel` to cancel")
             
         res=await con.recv()
-        if res.clean_content.lower!='proceed':
+        if res.clean_content.lower()!='proceed':
             return ['Operation canceled']
         else:
             with smtplib.SMTP("mail.cpu.party") as email_server:
@@ -592,16 +612,22 @@ async def send_email(interface: AdminInterface):
                 email_server.ehlo_or_helo_if_needed()
                 email_server.login('bot@cpu.party',EMAIL_HOST_PASSWORD)
                 email_server.ehlo()
+                
+                cursor.execute('SELECT count() FROM oauth_record WHERE opt_out_email=0')
+                total=cursor.fetchone()[0]
+
+                cursor.execute('SELECT first_name, school_email FROM oauth_record WHERE opt_out_email=0')
                 count=0
-                for user in bot.users_cache.values():
+                
+                for name, email_addr in cursor.fetchall():
                     try:
                         email = MIMEMultipart("alternative")
                         email["Subject"] = subject
                         email["From"] = "CPU Bot<bot@cpu.party>"
-                        email["To"] = user.school_email
+                        email["To"] = email_addr
                         email.attach(MIMEText(EMAIL_TEMPLATE.substitute(
                                 {
-                                    'name': user.first_name,
+                                    'name': name,
                                     'body': plain_body
                                 }), 'plain')
                         )
@@ -609,11 +635,14 @@ async def send_email(interface: AdminInterface):
                                 EMAIL_HTML_TEMPLATE.safe_substitute({
                                     'body'   : html_body,
                                     'subject': subject,
-                                    'name'   : user.first_name
+                                    'name'   : name
                                 }), 'html'))
+                        
+                        email_server.send_message(email)
+                        
                         count+=1
                         if count%10==0:
-                            await con.send(f'Progress: {count}/{len(bot.users_cache)}')
+                            await con.send(f'Progress: {count}/{total}')
                     except:
                         await on_error('Send email')
             return [f'A total of {count} emails have been sent']
