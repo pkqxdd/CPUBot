@@ -29,8 +29,7 @@ def join(request: HttpRequest):
     if not school_email.strip().endswith('@choate.edu'):
         return HttpResponse("Error: Please provide your Choate email", status=400)
     if Record.objects.filter(school_email=school_email).exists():
-        if Record.objects.get(school_email=school_email).join_success:
-            return render(request,'confirmation_template.html',{"text":"You have already signed up for the club.",'Title':'Error'},status=400)
+        return render(request,'confirmation_template.html',{"text":"You have already signed up for the club.",'Title':'Error'},status=400)
     try:
         record = Record(first_name=first_name,
                         last_name=last_name,
