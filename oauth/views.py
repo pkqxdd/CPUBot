@@ -95,6 +95,11 @@ CPU Bot
 <p>
         <a href="{auth_addr}">Click here</a> to join our server. Please note that this link is private to you so please do not share it with others.
 </p>
+
+<p>
+PS: If you happen to find this email in your spam folder, please log in to your Outlook account in your browser (desktop/mobile clients don't work).
+Then navigate to your spam folder and report it as "not a spam". This will make sure you receive our future communications.
+</p>
 <p>
 Your beloved,<br>
 CPU Bot
