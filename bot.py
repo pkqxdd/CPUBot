@@ -42,7 +42,7 @@ logger.addHandler(handler)
 
 bot = discord.Client()
 
-DEBUG = True
+DEBUG = False
 
 allowed_guild_ids = (479544231875182592, 426702004606337034)
 CPU_guild_id = 479544231875182592 if DEBUG else 426702004606337034
@@ -196,7 +196,7 @@ class UserInterface(BaseInterface):
                 \t- Bash (Bourne again shell);
                 use the `#lounge` channel for memes, jokes, chats, flirting, and everything else.
                 Please redirect any question about me to my creator Jerry `pkqxdd#1358`.
-
+                
                 I also support some basic commands. """) + self.usage
     
     @staticmethod
@@ -657,7 +657,11 @@ async def send_email(interface: AdminInterface):
 
 
 @bot.event
-async def on_member_join(member):
+async def on_member_join(member:discord.Member):
+    
+    if member.nick is None:
+        await CPU_guild.kick(member,'You must use the signup form to join the server.')
+        
     await member.send('''
 Welcome to CPU. Please adhere to the rules pinned in `#announcements` channel.
 use the `#general` channel of CPU server for general discussions about programming as well as the club;
